@@ -261,4 +261,8 @@ if (gameMode === 'bot') {
     startButton.style.display = 'block';
 } else {
     gameBoard.innerHTML = '<h3>Режим игры с другом</h3><p>Эта функция в разработке</p>';
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 007cc5a44d7a95095ea89a25ee19bedad94aa984

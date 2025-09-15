@@ -10,6 +10,7 @@
   "dependencies": {
     "express": "^4.18.2",
     "node-telegram-bot-api": "^0.64.0",
+<<<<<<< HEAD
     "uuid": "^9.0.1"
   },
   "keywords": [
@@ -18,6 +19,12 @@
     "durak",
     "card-game"
   ],
+=======
+    "express": "^4.18.2",
+    "uuid": "^9.0.1"
+  },
+  "keywords": ["telegram", "game", "durak", "card-game"],
+>>>>>>> 007cc5a44d7a95095ea89a25ee19bedad94aa984
   "author": "Teke22",
   "license": "MIT"
 }
