@@ -1,17 +1,23 @@
 {
   "name": "durak-telegram-game",
   "version": "1.0.0",
-  "description": "Мини-приложение для Telegram - игра Подкидной дурак",
+  "description": "Мини-приложение для Telegram - игра Подкидной дурак с ботом и multiplayer",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "express": "^4.18.2",
     "node-telegram-bot-api": "^0.64.0",
-    "express": "^4.18.2"
+    "uuid": "^9.0.1"
   },
-  "keywords": ["telegram", "game", "durak"],
-  "author": "Your Name",
+  "keywords": [
+    "telegram",
+    "game",
+    "durak",
+    "card-game"
+  ],
+  "author": "Teke22",
   "license": "MIT"
 }
