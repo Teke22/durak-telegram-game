@@ -13,7 +13,7 @@ app.use(express.static('public'));
 // Обработчик команды /start
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
-  const gameUrl = `https://your-app-name.onrender.com`; // Будем менять позже
+  const gameUrl = `https://durak-telegram-game.onrender.com`; // Будем менять позже
 
   bot.sendMessage(chatId, 'Добро пожаловать в игру "Подкидной дурак"!', {
     reply_markup: {
