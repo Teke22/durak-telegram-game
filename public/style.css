@@ -1,129 +1,59 @@
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    margin: 0;
-    padding: 20px;
-    color: #333;
-    min-height: 100vh;
-}
+/* Добавим эти стили в конец файла */
 
-#app {
-    max-width: 100%;
-    margin: 0 auto;
-}
-
-h2 {
-    color: white;
-    text-align: center;
-    margin: 0 0 15px 0;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-}
-
-.trump-info {
-    background: rgba(255, 255, 255, 0.9);
-    padding: 15px;
-    border-radius: 15px;
-    text-align: center;
-    margin: 15px 0;
-    font-weight: bold;
-}
-
-.trump-card {
-    font-size: 24px;
-    font-weight: bold;
-    color: #ff4444;
-    margin: 10px 0;
-}
-
-.table-section, .hand-section {
-    background: rgba(255, 255, 255, 0.9);
-    padding: 15px;
-    border-radius: 15px;
-    margin: 15px 0;
-}
-
-h3 {
-    margin: 0 0 15px 0;
-    color: #2c3e50;
-}
-
-.table-cards, .player-cards {
+.card-pair {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 5px;
+    align-items: center;
+    margin: 5px;
+}
+
+.card.defended {
+    border-color: #4CAF50;
+    background: linear-gradient(45deg, #f0fff0, #ffffff);
+}
+
+.action-buttons {
+    display: flex;
     gap: 10px;
     justify-content: center;
-    margin: 10px 0;
-}
-
-.card {
-    background: white;
-    border: 3px solid #ddd;
-    border-radius: 12px;
-    padding: 15px 10px;
-    min-width: 50px;
-    text-align: center;
-    font-weight: bold;
-    font-size: 18px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    transition: all 0.2s ease;
-}
-
-.card.clickable {
-    cursor: pointer;
-    border-color: #007aff;
-}
-
-.card.clickable:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-}
-
-.card.trump {
-    border-color: #ff4444;
-    background: linear-gradient(45deg, #fff0f0, #ffffff);
-    color: #ff4444;
-}
-
-.game-status {
-    background: rgba(255, 255, 255, 0.9);
-    padding: 15px;
-    border-radius: 15px;
-    text-align: center;
-    font-weight: bold;
     margin: 15px 0;
-    color: #2c3e50;
 }
 
-.win-message {
-    background: #4CAF50;
-    color: white;
-    padding: 20px;
-    border-radius: 15px;
-    text-align: center;
-    font-size: 24px;
-    font-weight: bold;
-    margin: 20px 0;
-}
-
-button {
+.action-buttons button {
     background: linear-gradient(45deg, #ff6b6b, #ee5a24);
     color: white;
     border: none;
-    padding: 15px 30px;
-    border-radius: 25px;
-    font-size: 18px;
-    font-weight: bold;
+    padding: 12px 20px;
+    border-radius: 8px;
     cursor: pointer;
-    margin: 20px auto;
-    display: block;
-    box-shadow: 0 4px 15px rgba(238, 90, 36, 0.4);
-    transition: transform 0.2s ease;
+    font-weight: bold;
 }
 
-button:hover {
-    transform: translateY(-2px);
+.action-buttons button:hover {
+    background: linear-gradient(45deg, #ee5a24, #ff6b6b);
 }
 
-button:active {
-    transform: translateY(0);
+.game-over {
+    text-align: center;
+    padding: 30px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 15px;
+    margin: 20px 0;
+}
+
+.winner {
+    font-size: 24px;
+    font-weight: bold;
+    margin: 20px 0;
+    color: #2c3e50;
+}
+
+.game-status {
+    background: rgba(255, 255, 255, 0.8);
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 10px 0;
+    font-weight: bold;
 }
