@@ -2,6 +2,7 @@ const tg = window.Telegram.WebApp;
 tg.expand();
 tg.enableClosingConfirmation();
 
+<<<<<<< HEAD
 console.log('MiniApp loaded successfully');
 
 const startButton = document.getElementById('start-game');
@@ -21,3 +22,21 @@ startButton.addEventListener('click', () => {
         <p>Выберите карту для атаки</p>
     `;
 });
+=======
+const gameMode = new URLSearchParams(window.location.search).get('mode') || 'bot';
+const startButton = document.getElementById('start-game');
+const gameBoard = document.getElementById('game-board');
+
+if (gameMode === 'bot') {
+    startButton.style.display = 'block';
+    startButton.addEventListener('click', initGame);
+} else {
+    gameBoard.innerHTML = '<h3>Режим игры с другом</h3><p>Эта функция в разработке</p>';
+}
+
+function initGame() {
+    tg.HapticFeedback.impactOccurred('light');
+    startButton.style.display = 'none';
+    gameBoard.innerHTML = '<p>Игра началась! Функциональность в разработке...</p>';
+}
+>>>>>>> 236014c0c39d0ef05012c2f6f1b66137bd9ce5d2
