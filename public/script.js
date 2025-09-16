@@ -27,6 +27,35 @@ let gameState = {
 const gameBoard = document.getElementById('game-board');
 const startButton = document.getElementById('start-game');
 
+// Инициализация интерфейса
+function initInterface() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode') || 'bot';
+    
+    if (mode === 'bot') {
+        // Показываем кнопку для игры с ботом
+        startButton.style.display = 'block';
+        startButton.textContent = '🎮 Начать игру с ботом';
+        gameBoard.innerHTML = `
+            <div style="text-align: center; padding: 20px; color: white;">
+                <h2>🎴 Подкидной дурак</h2>
+                <p>Готовы сыграть против бота?</p>
+                <p>Нажмите кнопку ниже чтобы начать!</p>
+            </div>
+        `;
+    } else {
+        // Скрываем кнопку для других режимов
+        startButton.style.display = 'none';
+        gameBoard.innerHTML = `
+            <div style="text-align: center; padding: 20px; color: white;">
+                <h2>👥 Игра с другом</h2>
+                <p>Этот режим пока в разработке</p>
+                <p>Скоро можно будет играть с друзьями!</p>
+            </div>
+        `;
+    }
+}
+
 // Инициализация игры
 function initGame() {
     tg.HapticFeedback.impactOccurred('light');
@@ -453,10 +482,10 @@ function endGame(winner) {
 // Обработчики событий
 startButton.addEventListener('click', initGame);
 
-// Показываем кнопку старта для режима с ботом
-if (gameState.mode === 'bot') {
-    startButton.style.display = 'block';
-    gameBoard.innerHTML = '<p>Нажмите "Начать игру" чтобы сыграть против бота!</p>';
-} else {
-    gameBoard.innerHTML = '<p>Режим игры с другом скоро будет доступен!</p>';
-}
+// Инициализация интерфейса при загрузке
+initInterface();
+
+// Дебаг информация
+console.log('Script loaded successfully');
+console.log('Game mode:', gameState.mode);
+console.log('Start button found:', !!startButton);
