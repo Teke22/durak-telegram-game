@@ -6,6 +6,9 @@ const token = process.env.BOT_TOKEN;
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Хранилище игровых сессий
+const gameSessions = new Map();
+
 // Получаем URL приложения
 const getAppUrl = () => {
     return process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
@@ -14,10 +17,10 @@ const getAppUrl = () => {
 const appUrl = getAppUrl();
 console.log('🌐 App URL:', appUrl);
 
-// Инициализация бота с Webhook
+// Инициализация бота
 let bot;
 if (token) {
-    bot = new TelegramBot(token);
+    bot = new TelegramBot(token, { polling: false });
     
     // Настраиваем webhook
     const webhookPath = `/bot${token}`;
@@ -35,14 +38,56 @@ if (token) {
 app.use(express.static('public'));
 app.use(express.json());
 
-// Webhook endpoint (ОБЯЗАТЕЛЬНО ДО других маршрутов!)
+// Webhook endpoint
 if (bot) {
     app.post(`/bot${token}`, (req, res) => {
-        console.log('📨 Received webhook update');
         bot.processUpdate(req.body);
         res.sendStatus(200);
     });
 }
+
+// API для multiplayer
+app.post('/api/create-game', (req, res) => {
+    const gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const playerId = req.body.playerId || `player_${Date.now()}`;
+    
+    gameSessions.set(gameId, {
+        id: gameId,
+        players: [playerId],
+        status: 'waiting',
+        created: Date.now(),
+        gameState: null
+    });
+    
+    res.json({ gameId, playerId });
+});
+
+app.post('/api/join-game/:gameId', (req, res) => {
+    const gameId = req.params.gameId;
+    const playerId = req.body.playerId || `player_${Date.now()}`;
+    const game = gameSessions.get(gameId);
+    
+    if (!game) {
+        return res.status(404).json({ error: 'Game not found' });
+    }
+    
+    if (game.players.length >= 2) {
+        return res.status(400).json({ error: 'Game is full' });
+    }
+    
+    game.players.push(playerId);
+    game.status = 'ready';
+    
+    res.json({ gameId, playerId, status: 'joined' });
+});
+
+app.get('/api/game/:gameId', (req, res) => {
+    const game = gameSessions.get(req.params.gameId);
+    if (!game) {
+        return res.status(404).json({ error: 'Game not found' });
+    }
+    res.json(game);
+});
 
 // Основные маршруты
 app.get('/', (req, res) => {
@@ -50,50 +95,50 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'OK', 
-        appUrl: appUrl,
-        hasBotToken: !!token,
-        time: new Date().toISOString()
-    });
+    res.json({ status: 'OK', appUrl, timestamp: new Date().toISOString() });
 });
 
 // Обработчики команд бота
 if (bot) {
     bot.onText(/\/start/, (msg) => {
         const chatId = msg.chat.id;
-        console.log('👋 Received /start from:', chatId);
         
-        const gameUrl = `${appUrl}?mode=bot`;
         const keyboard = {
-            inline_keyboard: [[
-                {
+            inline_keyboard: [
+                [{
                     text: '🎮 Играть с ботом',
-                    web_app: { url: gameUrl }
-                }
-            ]]
+                    web_app: { url: `${appUrl}?mode=bot` }
+                }],
+                [{
+                    text: '👥 Создать игру для двоих',
+                    web_app: { url: `${appUrl}?mode=create` }
+                }]
+            ]
         };
         
         bot.sendMessage(chatId, '🎴 Добро пожаловать в "Подкидного дурака"!', {
             reply_markup: keyboard
-        }).catch(error => {
-            console.error('❌ Send message error:', error);
         });
     });
 
-    // Обработчик ошибок
     bot.on('error', (error) => {
         console.error('🤖 Bot error:', error);
     });
 }
+
+// Очистка старых игр каждые 5 минут
+setInterval(() => {
+    const now = Date.now();
+    for (const [gameId, game] of gameSessions.entries()) {
+        if (now - game.created > 30 * 60 * 1000) { // 30 минут
+            gameSessions.delete(gameId);
+        }
+    }
+}, 5 * 60 * 1000);
 
 // Запуск сервера
 app.listen(port, () => {
     console.log('🚀 Server started on port:', port);
     console.log('🔧 Environment:', process.env.NODE_ENV || 'development');
     console.log('🎮 App URL:', appUrl);
-    
-    if (!token) {
-        console.log('❌ BOT_TOKEN not set - bot disabled');
-    }
 });
