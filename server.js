@@ -110,14 +110,37 @@ if (bot) {
                     web_app: { url: `${appUrl}?mode=bot` }
                 }],
                 [{
-                    text: '👥 Создать игру для двоих',
+                    text: '👥 Создать комнату',
                     web_app: { url: `${appUrl}?mode=create` }
+                }],
+                [{
+                    text: '🔗 Присоединиться по коду',
+                    web_app: { url: `${appUrl}?mode=join` }
                 }]
             ]
         };
         
         bot.sendMessage(chatId, '🎴 Добро пожаловать в "Подкидного дурака"!', {
             reply_markup: keyboard
+        });
+    });
+
+    // Обработчик команды /join
+    bot.onText(/\/join (.+)/, (msg, match) => {
+        const chatId = msg.chat.id;
+        const gameId = match[1].toUpperCase();
+        
+        const joinUrl = `${appUrl}?mode=join&gameId=${gameId}`;
+        
+        bot.sendMessage(chatId, `🎮 Присоединиться к игре ${gameId}`, {
+            reply_markup: {
+                inline_keyboard: [[
+                    {
+                        text: '✅ Присоединиться',
+                        web_app: { url: joinUrl }
+                    }
+                ]]
+            }
         });
     });
 
