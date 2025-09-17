@@ -43,6 +43,11 @@ const RANKS = ["6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 const RANK_VALUES = { "6": 6, "7": 7, "8": 8, "9": 9, "10": 10, J: 11, Q: 12, K: 13, A: 14 };
 const HAND_LIMIT = 6;
 
+// Цвет масти: черви/бубны — красные, пики/трефы — чёрные
+function suitColorClass(suit) {
+  return (suit === "♥" || suit === "♦") ? "red" : "black";
+}
+
 // ---------------- Глобальное состояние ----------------
 let gameState = {
   mode: new URLSearchParams(window.location.search).get("mode") || "bot",
@@ -210,11 +215,17 @@ function renderGame() {
 
   const header = document.createElement("div");
   const deckCount = gameState.deck.length;
+
+  // красивый показ козыря
+  const trumpHtml = renderCardInline(gameState.trumpCard, true);
+
   header.innerHTML = `
     <h2>🎴 Подкидной дурак</h2>
     <div class="trump-info">
-      <strong>Козырь:</strong> ${gameState.trumpSuit}
-      <div class="trump-card">${gameState.trumpCard.rank}${gameState.trumpCard.suit}</div>
+      <div class="trump-card">
+        <span class="trump-badge">Козырь</span>
+        ${trumpHtml}
+      </div>
       <div style="margin-top:6px;">В колоде: ${deckCount} карт</div>
     </div>
     <div class="game-status">${getStatusMessage()}</div>
@@ -342,7 +353,7 @@ function canAttackWithCard(card) {
   // лимит по количеству пар: нельзя подкинуть больше, чем карт у защитника
   const limitOk = gameState.table.length < currentDefenderHandLen();
 
-  if (gameState.table.length === 0) return true && limitOk;
+  if (gameState.table.length === 0) return limitOk;
 
   const ranks = ranksOnTable();
   return limitOk && ranks.has(card.rank);
@@ -395,7 +406,6 @@ function defendWithCard(card, index) {
     // Игрок защитился от бота → теперь атакующий (бот) может подкидывать или сказать "бито"
     gameState.status = "attacking";
     gameState.currentPlayer = gameState.attacker; // здесь attacker === "bot"
-    // Передаём ход боту — он решит подкидывать или «бито»
     setTimeout(botMove, 400);
   }
 }
@@ -433,11 +443,9 @@ function botMove() {
 }
 
 function botAttackOrAdd() {
-  // Бот — атакующий: если стол пуст, начать; если пары защищены — может подкинуть
   if (gameState.table.length === 0) {
     const idx = botChooseAttackCard();
     if (idx === -1) {
-      // не может атаковать — раунд "бито" и ход к игроку
       gameState.table = [];
       drawPhaseAfterRound({ defenderTook: false, attacker: "bot", defender: "player" });
       return;
@@ -455,7 +463,7 @@ function botAttackOrAdd() {
     return;
   }
 
-  // если все пары защищены — можно попытаться подкинуть по рангу (с лимитом)
+  // все пары защищены — можно подкинуть (с лимитом)
   const allDefended = gameState.table.every(p => p.defend);
   const canAddMore = gameState.table.length < currentDefenderHandLen();
   if (allDefended && canAddMore) {
@@ -503,7 +511,6 @@ function botDefend() {
     gameState.table = [];
     sortHand(gameState.botHand);
 
-    // защитник взял → атакующим остаётся игрок (он атаковал)
     drawPhaseAfterRound({ defenderTook: true, attacker: "player", defender: "bot" });
     return;
   }
@@ -592,17 +599,31 @@ function sortHand(hand) {
     return a.value - b.value;
   });
 }
+
+function renderCardInline(card, isTrump) {
+  const color = suitColorClass(card.suit);
+  const trumpClass = isTrump || card.suit === gameState.trumpSuit ? "trump" : "";
+  return `<span class="card ${trumpClass}">
+    <span class="rank">${card.rank}</span><span class="suit ${color}">${card.suit}</span>
+  </span>`;
+}
+
 function createCardElement(card, clickable) {
+  const color = suitColorClass(card.suit);
   const el = document.createElement("div");
   el.className = `card ${clickable ? "clickable" : ""} ${card.suit === gameState.trumpSuit ? "trump" : ""}`;
-  el.textContent = `${card.rank}${card.suit}`;
+  el.setAttribute('data-suit', card.suit);
+  el.setAttribute('aria-label', `${card.rank}${card.suit}`);
+  el.innerHTML = `<span class="rank">${card.rank}</span><span class="suit ${color}">${card.suit}</span>`;
   return el;
 }
+
 function getStatusMessage() {
   if (gameState.status === "attacking")  return gameState.currentPlayer === "player" ? "✅ Ваш ход. Атакуйте!" : "🤖 Бот атакует...";
   if (gameState.status === "defending")  return gameState.currentPlayer === "player" ? "🛡️ Ваш ход. Защищайтесь!" : "🤖 Бот защищается...";
   return "Ожидание...";
 }
+
 function gameOverCheck() {
   const deckEmpty = gameState.deck.length === 0;
   const tableEmpty = gameState.table.length === 0;
@@ -617,6 +638,7 @@ function gameOverCheck() {
   }
   return false;
 }
+
 function endGame(winner) {
   let text = "Ничья!";
   if (winner === "player") text = "🎉 Вы победили!";

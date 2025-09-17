@@ -31,10 +31,29 @@ h1, h2 {
 .trump-card {
     font-size: 24px;
     font-weight: bold;
-    color: #ff4444;
     margin: 10px 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #fff7d6, #ffffff);
+    border: 2px solid #d4af37; /* золотой */
+    box-shadow: 0 0 12px rgba(212,175,55,0.35);
 }
 
+.trump-badge {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #d4af37;
+    color: #2c2c2c;
+    font-weight: 800;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+}
+
+/* Контейнеры */
 .table-section, .hand-section {
     background: rgba(255, 255, 255, 0.9);
     padding: 15px;
@@ -57,36 +76,54 @@ h3 {
     z-index: 1;
 }
 
+/* Карта */
 .card {
     background: white;
     border: 3px solid #ddd;
     border-radius: 12px;
-    padding: 15px 10px;
-    min-width: 50px;
+    padding: 14px 10px;
+    min-width: 54px;
     text-align: center;
-    font-weight: bold;
-    font-size: 18px;
+    font-weight: 800;
+    font-size: 20px;
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     transition: all 0.2s ease;
-    position: relative;          /* гарантируем слой */
-    z-index: 2;                  /* поверх контейнеров */
-    pointer-events: auto;        /* клики точно проходят */
+    position: relative;
+    z-index: 2;
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    line-height: 1;
 }
 
+/* Красные/чёрные масти */
+.suit.red   { color: #e53935; }
+.suit.black { color: #111111; }
+.rank       { color: #111111; }
+
+/* Кликабельность */
 .card.clickable {
     cursor: pointer;
     border-color: #007aff;
 }
-
 .card.clickable:hover {
     transform: translateY(-5px);
     box-shadow: 0 8px 16px rgba(0,0,0,0.2);
 }
 
+/* Подсветка козырной карты */
 .card.trump {
-    border-color: #ff4444;
-    background: linear-gradient(45deg, #fff0f0, #ffffff);
-    color: #ff4444;
+    border-color: #d4af37;
+    background: linear-gradient(45deg, #fff7d6, #ffffff);
+    box-shadow: 0 0 0 3px rgba(212,175,55,0.2), 0 8px 16px rgba(0,0,0,0.18);
+}
+
+/* Защита */
+.card.defended {
+    border-color: #4CAF50;
+    background: linear-gradient(45deg, #f0fff0, #ffffff);
 }
 
 .game-status {
@@ -126,7 +163,6 @@ h3 {
     width: 80%;
     max-width: 250px;
 }
-
 #start-game:hover { transform: translateY(-2px); }
 #start-game:active { transform: translateY(0); }
 
@@ -138,18 +174,12 @@ h3 {
     margin: 5px;
 }
 
-.card.defended {
-    border-color: #4CAF50;
-    background: linear-gradient(45deg, #f0fff0, #ffffff);
-}
-
 .action-buttons {
     display: flex;
     gap: 10px;
     justify-content: center;
     margin: 15px 0;
 }
-
 .action-buttons button {
     background: linear-gradient(45deg, #ff6b6b, #ee5a24);
     color: white;
@@ -159,7 +189,6 @@ h3 {
     cursor: pointer;
     font-weight: bold;
 }
-
 .action-buttons button:hover {
     background: linear-gradient(45deg, #ee5a24, #ff6b6b);
 }
@@ -171,7 +200,6 @@ h3 {
     border-radius: 15px;
     margin: 20px 0;
 }
-
 .winner {
     font-size: 24px;
     font-weight: bold;
@@ -200,13 +228,12 @@ button.action-btn {
     margin: 5px;
     transition: transform 0.2s;
 }
-
 button.action-btn:hover { transform: translateY(-2px); }
 button.primary { background: #007aff; color: white; }
 button.success { background: #28a745; color: white; }
 button.danger  { background: #dc3545; color: white; }
 
-/* DEBUG overlay */
+/* DEBUG overlay (если включён ?debug=1) */
 #debug-overlay {
     position: fixed;
     bottom: 8px;
