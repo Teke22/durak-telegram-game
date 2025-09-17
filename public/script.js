@@ -164,10 +164,6 @@ function joinWithCode() {
   }
 }
 
-// ---------------- Multiplayer API (минимальные) ----------------
-// (без изменений — опущено ради краткости, но у тебя уже есть рабочие — можно оставить старые)
-// ... если нужно, скопируй из предыдущей версии; это не влияет на одиночную игру ...
-
 // ---------------- Игровая логика (бот) ----------------
 function initGame() {
   tg.HapticFeedback?.impactOccurred?.("light");
@@ -268,6 +264,7 @@ function renderActionButtons() {
   const actions = document.createElement("div");
   actions.className = "action-buttons";
 
+  // защитник (игрок) может "взять"
   if (gameState.status === "defending" && gameState.currentPlayer === "player") {
     const takeBtn = document.createElement("button");
     takeBtn.className = "action-btn danger";
@@ -276,8 +273,10 @@ function renderActionButtons() {
     actions.appendChild(takeBtn);
   }
 
+  // все пары защищены — атакующий (если это игрок) может сказать "Бито"
   const allDefended = gameState.table.length > 0 && gameState.table.every((p) => p.defend);
-  if (allDefended && gameState.currentPlayer === "player" && gameState.status !== "defending") {
+  const playerIsAttacker = gameState.attacker === "player";
+  if (allDefended && playerIsAttacker && gameState.currentPlayer === "player" && gameState.status === "attacking") {
     const passBtn = document.createElement("button");
     passBtn.className = "action-btn success";
     passBtn.textContent = "Бито";
@@ -297,10 +296,15 @@ function renderPlayerHand() {
   playerCards.className = "player-cards";
 
   gameState.playerHand.forEach((card, index) => {
-    const canAttack = gameState.status === "attacking" && gameState.currentPlayer === "player" && canAttackWithCard(card);
-    const canDefend = gameState.status === "defending" && gameState.currentPlayer === "player" && canDefendWithCard(card);
-    const clickable = canAttack || canDefend;
+    const canAttack = gameState.status === "attacking"
+      && gameState.currentPlayer === "player"
+      && canAttackWithCard(card);
 
+    const canDefend = gameState.status === "defending"
+      && gameState.currentPlayer === "player"
+      && canDefendWithCard(card);
+
+    const clickable = canAttack || canDefend;
     const el = createCardElement(card, clickable);
 
     if (clickable) {
@@ -330,10 +334,18 @@ function ranksOnTable() {
   return ranks;
 }
 
+function currentDefenderHandLen() {
+  return gameState.defender === "player" ? gameState.playerHand.length : gameState.botHand.length;
+}
+
 function canAttackWithCard(card) {
-  if (gameState.table.length === 0) return true;
+  // лимит по количеству пар: нельзя подкинуть больше, чем карт у защитника
+  const limitOk = gameState.table.length < currentDefenderHandLen();
+
+  if (gameState.table.length === 0) return true && limitOk;
+
   const ranks = ranksOnTable();
-  return ranks.has(card.rank);
+  return limitOk && ranks.has(card.rank);
 }
 
 function canDefendWithCard(card) {
@@ -356,6 +368,7 @@ function attackWithCard(card, index) {
   gameState.playerHand.splice(index, 1);
   gameState.table.push({ attack: card, defend: null });
 
+  // Каждый новый брошенный игроком ход требует защиты бота
   gameState.status = "defending";
   gameState.currentPlayer = "bot";
   gameState.attacker = "player";
@@ -363,7 +376,7 @@ function attackWithCard(card, index) {
   gameState.canAddCards = true;
 
   renderGame();
-  setTimeout(botMove, 500);
+  setTimeout(botMove, 400);
 }
 
 function defendWithCard(card, index) {
@@ -375,9 +388,16 @@ function defendWithCard(card, index) {
   gameState.playerHand.splice(index, 1);
   lastPair.defend = card;
 
-  const allDefended = gameState.table.every((p) => p.defend);
   renderGame();
-  if (allDefended) setTimeout(botMove, 500);
+
+  const allDefended = gameState.table.every((p) => p.defend);
+  if (allDefended) {
+    // Игрок защитился от бота → теперь атакующий (бот) может подкидывать или сказать "бито"
+    gameState.status = "attacking";
+    gameState.currentPlayer = gameState.attacker; // здесь attacker === "bot"
+    // Передаём ход боту — он решит подкидывать или «бито»
+    setTimeout(botMove, 400);
+  }
 }
 
 function takeCards() {
@@ -390,9 +410,11 @@ function takeCards() {
   gameState.table = [];
   sortHand(gameState.playerHand);
 
-  drawPhaseAfterRound({ defenderTook: true, attacker: "player", defender: "bot" });
+  // защитник (игрок) взял → атакующий остаётся прежним (бот будет атаковать снова)
+  drawPhaseAfterRound({ defenderTook: true, attacker: "bot", defender: "player" });
 }
 
+// --- Завершить раунд «Бито» (когда атакующий доволен) ---
 function passTurn() {
   tg.HapticFeedback?.impactOccurred?.("light");
   gameState.table = [];
@@ -403,42 +425,85 @@ function passTurn() {
 function botMove() {
   if (gameOverCheck()) return;
 
-  if (gameState.status === "attacking" && gameState.currentPlayer === "bot") botAttack();
-  else if (gameState.status === "defending" && gameState.currentPlayer === "bot") botDefend();
-  else botTryAddCardsOrPass();
+  if (gameState.status === "attacking" && gameState.currentPlayer === "bot") {
+    botAttackOrAdd();
+  } else if (gameState.status === "defending" && gameState.currentPlayer === "bot") {
+    botDefend();
+  }
 }
 
-function botAttack() {
-  const idx = botChooseAttackCard();
-  if (idx === -1) {
-    gameState.table = [];
-    drawPhaseAfterRound({ defenderTook: false, attacker: "bot", defender: "player" });
+function botAttackOrAdd() {
+  // Бот — атакующий: если стол пуст, начать; если пары защищены — может подкинуть
+  if (gameState.table.length === 0) {
+    const idx = botChooseAttackCard();
+    if (idx === -1) {
+      // не может атаковать — раунд "бито" и ход к игроку
+      gameState.table = [];
+      drawPhaseAfterRound({ defenderTook: false, attacker: "bot", defender: "player" });
+      return;
+    }
+    const card = gameState.botHand.splice(idx, 1)[0];
+    gameState.table.push({ attack: card, defend: null });
+
+    gameState.status = "defending";
+    gameState.currentPlayer = "player";
+    gameState.attacker = "bot";
+    gameState.defender = "player";
+    gameState.canAddCards = true;
+
+    renderGame();
     return;
   }
-  const card = gameState.botHand.splice(idx, 1)[0];
-  gameState.table.push({ attack: card, defend: null });
 
-  gameState.status = "defending";
-  gameState.currentPlayer = "player";
-  gameState.attacker = "bot";
-  gameState.defender = "player";
-  gameState.canAddCards = true;
+  // если все пары защищены — можно попытаться подкинуть по рангу (с лимитом)
+  const allDefended = gameState.table.every(p => p.defend);
+  const canAddMore = gameState.table.length < currentDefenderHandLen();
+  if (allDefended && canAddMore) {
+    const rset = ranksOnTable();
+    let addIdx = -1;
+    for (let i = 0; i < gameState.botHand.length; i++) {
+      if (rset.has(gameState.botHand[i].rank)) { addIdx = i; break; }
+    }
+    if (addIdx !== -1) {
+      const addCard = gameState.botHand.splice(addIdx, 1)[0];
+      gameState.table.push({ attack: addCard, defend: null });
 
-  renderGame();
+      gameState.status = "defending";
+      gameState.currentPlayer = "player";
+      gameState.attacker = "bot";
+      gameState.defender = "player";
+
+      renderGame();
+      return;
+    }
+  }
+
+  // иначе — «бито»
+  gameState.table = [];
+  drawPhaseAfterRound({ defenderTook: false, attacker: "bot", defender: "player" });
 }
 
 function botDefend() {
   const lastPair = gameState.table[gameState.table.length - 1];
-  if (!lastPair || lastPair.defend) { botTryAddCardsOrPass(); return; }
+  if (!lastPair || lastPair.defend) {
+    // нечего защищать — вернём ход атакующему (игроку) чтобы он мог подкинуть
+    gameState.status = "attacking";
+    gameState.currentPlayer = gameState.attacker; // attacker === "player"
+    renderGame();
+    return;
+  }
 
   const idx = botChooseDefendCard(lastPair.attack);
   if (idx === -1) {
+    // бот не может защититься → берёт
     for (const pair of gameState.table) {
       gameState.botHand.push(pair.attack);
       if (pair.defend) gameState.botHand.push(pair.defend);
     }
     gameState.table = [];
     sortHand(gameState.botHand);
+
+    // защитник взял → атакующим остаётся игрок (он атаковал)
     drawPhaseAfterRound({ defenderTook: true, attacker: "player", defender: "bot" });
     return;
   }
@@ -446,44 +511,9 @@ function botDefend() {
   const card = gameState.botHand.splice(idx, 1)[0];
   lastPair.defend = card;
 
-  renderGame();
-
-  const allDefended = gameState.table.every((p) => p.defend);
-  if (allDefended) setTimeout(botTryAddCardsOrPass, 500);
-}
-
-function botTryAddCardsOrPass() {
-  const canAdd =
-    gameState.table.length > 0 &&
-    gameState.table.every((p) => p.defend) &&
-    Math.min(gameState.playerHand.length, gameState.botHand.length) > gameState.table.length;
-
-  if (!canAdd) {
-    gameState.table = [];
-    drawPhaseAfterRound({ defenderTook: false, attacker: gameState.attacker, defender: gameState.defender });
-    return;
-  }
-
-  const rset = ranksOnTable();
-  let addIdx = -1;
-  for (let i = 0; i < gameState.botHand.length; i++) {
-    if (rset.has(gameState.botHand[i].rank)) { addIdx = i; break; }
-  }
-  if (addIdx === -1) {
-    gameState.table = [];
-    drawPhaseAfterRound({ defenderTook: false, attacker: gameState.attacker, defender: gameState.defender });
-    return;
-  }
-
-  const addCard = gameState.botHand.splice(addIdx, 1)[0];
-  gameState.table.push({ attack: addCard, defend: null });
-
-  gameState.status = "defending";
-  gameState.currentPlayer = "player";
-  gameState.attacker = "bot";
-  gameState.defender = "player";
-  gameState.canAddCards = true;
-
+  // Успешно защитился — теперь снова ход атакующего (игрок может подкинуть ещё)
+  gameState.status = "attacking";
+  gameState.currentPlayer = gameState.attacker; // "player"
   renderGame();
 }
 
@@ -542,7 +572,7 @@ function drawPhaseAfterRound({ defenderTook, attacker, defender }) {
   gameState.canAddCards = false;
 
   renderGame();
-  if (gameState.currentPlayer === "bot") setTimeout(botMove, 500);
+  if (gameState.currentPlayer === "bot") setTimeout(botMove, 400);
   gameOverCheck();
 }
 
