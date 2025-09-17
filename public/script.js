@@ -39,9 +39,7 @@ function showToast(text, type = 'info', timeout = 1600) {
   el.className = `toast ${type}`;
   el.textContent = text;
   container.appendChild(el);
-  // анимация появления
   requestAnimationFrame(() => el.classList.add('show'));
-  // автоудаление
   setTimeout(() => {
     el.classList.remove('show');
     setTimeout(() => el.remove(), 200);
@@ -224,6 +222,9 @@ function renderGame() {
   `;
   gameBoard.appendChild(header);
 
+  // Рука бота (рубашкой)
+  renderOpponentHand();
+
   if (gameState.table.length > 0) renderTable();
   renderActionButtons();
   renderPlayerHand();
@@ -235,6 +236,42 @@ function renderGame() {
     player: gameState.playerHand.map(c=>c.rank+c.suit).join(' '),
     bot: gameState.botHand.length,
   });
+}
+
+function renderOpponentHand() {
+  const n = gameState.botHand.length;
+  const section = document.createElement('div');
+  section.className = 'opponent-section';
+  section.innerHTML = `<h3>Карты бота: ${n}</h3>`;
+
+  const row = document.createElement('div');
+  row.className = 'opponent-cards';
+
+  // Показываем максимум 12 рубашек, остальное «веером»
+  const visible = Math.min(n, 12);
+  for (let i = 0; i < visible; i++) {
+    const back = document.createElement('div');
+    back.className = 'card back';
+    back.setAttribute('aria-label', 'Карта бота (рубашка)');
+    row.appendChild(back);
+  }
+
+  // Если карт больше 12 — добавим компактный индикатор
+  if (n > 12) {
+    const more = document.createElement('div');
+    more.className = 'card back';
+    more.style.minWidth = '54px';
+    more.style.background = 'rgba(0,0,0,0.1)';
+    more.style.borderStyle = 'dashed';
+    more.style.borderColor = '#666';
+    more.style.color = '#333';
+    more.style.fontWeight = '800';
+    more.textContent = `+${n - 12}`;
+    row.appendChild(more);
+  }
+
+  section.appendChild(row);
+  gameBoard.appendChild(section);
 }
 
 function renderTable() {
