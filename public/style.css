@@ -7,247 +7,126 @@ body {
     min-height: 100vh;
 }
 
-#app {
-    max-width: 100%;
-    margin: 0 auto;
-}
+#app { max-width: 100%; margin: 0 auto; }
 
 h1, h2 {
-    color: white;
-    text-align: center;
-    margin: 0 0 15px 0;
+    color: white; text-align: center; margin: 0 0 15px 0;
     text-shadow: 0 2px 4px rgba(0,0,0,0.3);
 }
 
 .trump-info {
     background: rgba(255, 255, 255, 0.9);
-    padding: 15px;
-    border-radius: 15px;
-    text-align: center;
-    margin: 15px 0;
-    font-weight: bold;
+    padding: 15px; border-radius: 15px; text-align: center; margin: 15px 0; font-weight: bold;
 }
-
 .trump-card {
-    font-size: 24px;
-    font-weight: bold;
-    margin: 10px 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: linear-gradient(135deg, #fff7d6, #ffffff);
-    border: 2px solid #d4af37; /* золотой */
-    box-shadow: 0 0 12px rgba(212,175,55,0.35);
+    font-size: 24px; font-weight: bold; margin: 10px 0; display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 999px; background: linear-gradient(135deg, #fff7d6, #ffffff);
+    border: 2px solid #d4af37; box-shadow: 0 0 12px rgba(212,175,55,0.35);
 }
-
 .trump-badge {
-    font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: #d4af37;
-    color: #2c2c2c;
-    font-weight: 800;
-    letter-spacing: .5px;
-    text-transform: uppercase;
+    font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #d4af37; color: #2c2c2c;
+    font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
 }
 
-/* Контейнеры */
 .table-section, .hand-section {
     background: rgba(255, 255, 255, 0.9);
-    padding: 15px;
-    border-radius: 15px;
-    margin: 15px 0;
+    padding: 15px; border-radius: 15px; margin: 15px 0;
 }
-
-h3 {
-    margin: 0 0 15px 0;
-    color: #2c3e50;
-}
+h3 { margin: 0 0 15px 0; color: #2c3e50; }
 
 .table-cards, .player-cards {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    justify-content: center;
-    margin: 10px 0;
-    position: relative;
-    z-index: 1;
+    display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 10px 0;
+    position: relative; z-index: 1;
 }
 
 /* Карта */
 .card {
-    background: white;
-    border: 3px solid #ddd;
-    border-radius: 12px;
-    padding: 14px 10px;
-    min-width: 54px;
-    text-align: center;
-    font-weight: 800;
-    font-size: 20px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    transition: all 0.2s ease;
-    position: relative;
-    z-index: 2;
-    pointer-events: auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    line-height: 1;
+    background: white; border: 3px solid #ddd; border-radius: 12px;
+    padding: 14px 10px; min-width: 54px; text-align: center; font-weight: 800; font-size: 20px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1); transition: all 0.2s ease;
+    position: relative; z-index: 2; pointer-events: auto;
+    display: inline-flex; align-items: center; justify-content: center; gap: 2px; line-height: 1;
 }
-
-/* Красные/чёрные масти */
-.suit.red   { color: #e53935; }
+.suit.red { color: #e53935; }
 .suit.black { color: #111111; }
-.rank       { color: #111111; }
+.rank { color: #111111; }
 
-/* Кликабельность */
-.card.clickable {
-    cursor: pointer;
-    border-color: #007aff;
-}
-.card.clickable:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-}
+.card.clickable { cursor: pointer; border-color: #007aff; }
+.card.clickable:hover { transform: translateY(-5px); box-shadow: 0 8px 16px rgba(0,0,0,0.2); }
 
-/* Подсветка козырной карты */
+/* Козырь визуально */
 .card.trump {
     border-color: #d4af37;
     background: linear-gradient(45deg, #fff7d6, #ffffff);
     box-shadow: 0 0 0 3px rgba(212,175,55,0.2), 0 8px 16px rgba(0,0,0,0.18);
 }
 
-/* Защита */
-.card.defended {
-    border-color: #4CAF50;
-    background: linear-gradient(45deg, #f0fff0, #ffffff);
-}
+.card.defended { border-color: #4CAF50; background: linear-gradient(45deg, #f0fff0, #ffffff); }
 
 .game-status {
     background: rgba(255, 255, 255, 0.9);
-    padding: 15px;
-    border-radius: 15px;
-    text-align: center;
-    font-weight: bold;
-    margin: 15px 0;
-    color: #2c3e50;
-}
-
-.win-message {
-    background: #4CAF50;
-    color: white;
-    padding: 20px;
-    border-radius: 15px;
-    text-align: center;
-    font-size: 24px;
-    font-weight: bold;
-    margin: 20px 0;
+    padding: 15px; border-radius: 15px; text-align: center; font-weight: bold;
+    margin: 15px 0; color: #2c3e50;
 }
 
 #start-game {
-    background: linear-gradient(45deg, #ff6b6b, #ee5a24);
-    color: white;
-    border: none;
-    padding: 15px 30px;
-    border-radius: 25px;
-    font-size: 18px;
-    font-weight: bold;
-    cursor: pointer;
-    margin: 20px auto;
-    display: block;
-    box-shadow: 0 4px 15px rgba(238, 90, 36, 0.4);
-    transition: transform 0.2s ease;
-    width: 80%;
-    max-width: 250px;
+    background: linear-gradient(45deg, #ff6b6b, #ee5a24); color: white; border: none;
+    padding: 15px 30px; border-radius: 25px; font-size: 18px; font-weight: bold; cursor: pointer;
+    margin: 20px auto; display: block; box-shadow: 0 4px 15px rgba(238, 90, 36, 0.4);
+    transition: transform 0.2s ease; width: 80%; max-width: 250px;
 }
 #start-game:hover { transform: translateY(-2px); }
 #start-game:active { transform: translateY(0); }
 
-.card-pair {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    align-items: center;
-    margin: 5px;
-}
+.card-pair { display: flex; flex-direction: column; gap: 5px; align-items: center; margin: 5px; }
 
-.action-buttons {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    margin: 15px 0;
-}
+.action-buttons { display: flex; gap: 10px; justify-content: center; margin: 15px 0; }
 .action-buttons button {
-    background: linear-gradient(45deg, #ff6b6b, #ee5a24);
-    color: white;
-    border: none;
-    padding: 12px 20px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: bold;
+    background: linear-gradient(45deg, #ff6b6b, #ee5a24); color: white; border: none; padding: 12px 20px;
+    border-radius: 8px; cursor: pointer; font-weight: bold;
 }
-.action-buttons button:hover {
-    background: linear-gradient(45deg, #ee5a24, #ff6b6b);
-}
+.action-buttons button:hover { background: linear-gradient(45deg, #ee5a24, #ff6b6b); }
 
 .game-over {
-    text-align: center;
-    padding: 30px;
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 15px;
-    margin: 20px 0;
+    text-align: center; padding: 30px; background: rgba(255, 255, 255, 0.9);
+    border-radius: 15px; margin: 20px 0;
 }
-.winner {
-    font-size: 24px;
-    font-weight: bold;
-    margin: 20px 0;
-    color: #2c3e50;
-}
+.winner { font-size: 24px; font-weight: bold; margin: 20px 0; color: #2c3e50; }
 
 /* Формы */
 input[type="text"] {
-    padding: 12px;
-    font-size: 16px;
-    border: 2px solid #ddd;
-    border-radius: 8px;
-    width: 200px;
-    text-align: center;
-    text-transform: uppercase;
+    padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px;
+    width: 200px; text-align: center; text-transform: uppercase;
 }
-
 button.action-btn {
-    padding: 12px 20px;
-    border: none;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: bold;
-    cursor: pointer;
-    margin: 5px;
-    transition: transform 0.2s;
+    padding: 12px 20px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold;
+    cursor: pointer; margin: 5px; transition: transform 0.2s;
 }
 button.action-btn:hover { transform: translateY(-2px); }
 button.primary { background: #007aff; color: white; }
 button.success { background: #28a745; color: white; }
 button.danger  { background: #dc3545; color: white; }
 
-/* DEBUG overlay (если включён ?debug=1) */
+/* Toasts */
+#toast-container {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 10000; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none;
+}
+.toast {
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff; padding: 10px 14px; border-radius: 10px;
+    font-size: 14px; box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+    transform: translateY(-10px); opacity: 0; transition: all .2s ease;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { background: rgba(40,167,69,0.92); }
+.toast.info    { background: rgba(0,0,0,0.85); }
+.toast.warn    { background: rgba(255,193,7,0.92); color: #2c2c2c; }
+
+/* DEBUG overlay */
 #debug-overlay {
-    position: fixed;
-    bottom: 8px;
-    left: 8px;
-    right: 8px;
-    background: rgba(0,0,0,0.75);
-    color: #0f0;
-    padding: 8px 10px;
-    border-radius: 8px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
-    line-height: 1.35;
-    max-height: 40vh;
-    overflow: auto;
-    z-index: 9999;
-    white-space: pre-wrap;
+    position: fixed; bottom: 8px; left: 8px; right: 8px; background: rgba(0,0,0,0.75); color: #0f0;
+    padding: 8px 10px; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.35; max-height: 40vh; overflow: auto; z-index: 9999; white-space: pre-wrap;
 }

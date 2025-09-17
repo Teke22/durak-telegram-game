@@ -2,8 +2,7 @@
 
 // ---- Безопасный Telegram.WebApp и перехват ошибок ----
 const tg = window.Telegram?.WebApp ?? {
-  expand() {},
-  enableClosingConfirmation() {},
+  expand() {}, enableClosingConfirmation() {},
   HapticFeedback: { impactOccurred() {} },
   showPopup({ title, message }) { try { alert(`${title ? title + "\n" : ""}${message ?? ""}`); } catch(_) {} },
   initDataUnsafe: {},
@@ -28,13 +27,25 @@ function mountDebugOverlay() {
   el.id = 'debug-overlay';
   el.textContent = 'DEBUG ON';
   document.body.appendChild(el);
+  window.addEventListener('error', (e) => logDebug('window.error:', e?.message || e));
+  window.addEventListener('unhandledrejection', (e) => logDebug('unhandledrejection:', e?.reason?.message || e?.reason || e));
+}
 
-  window.addEventListener('error', (e) => {
-    logDebug('window.error:', e?.message || e);
-  });
-  window.addEventListener('unhandledrejection', (e) => {
-    logDebug('unhandledrejection:', e?.reason?.message || e?.reason || e);
-  });
+// ---------------- Тосты ----------------
+function showToast(text, type = 'info', timeout = 1600) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = text;
+  container.appendChild(el);
+  // анимация появления
+  requestAnimationFrame(() => el.classList.add('show'));
+  // автоудаление
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 200);
+  }, timeout);
 }
 
 // ---------------- Константы игры ----------------
@@ -42,36 +53,19 @@ const SUITS = ["♠", "♥", "♦", "♣"];
 const RANKS = ["6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 const RANK_VALUES = { "6": 6, "7": 7, "8": 8, "9": 9, "10": 10, J: 11, Q: 12, K: 13, A: 14 };
 const HAND_LIMIT = 6;
-
-// Цвет масти: черви/бубны — красные, пики/трефы — чёрные
-function suitColorClass(suit) {
-  return (suit === "♥" || suit === "♦") ? "red" : "black";
-}
+function suitColorClass(suit) { return (suit === "♥" || suit === "♦") ? "red" : "black"; }
 
 // ---------------- Глобальное состояние ----------------
 let gameState = {
   mode: new URLSearchParams(window.location.search).get("mode") || "bot",
-
-  deck: [],
-  trumpSuit: "",
-  trumpCard: null,
-
-  playerHand: [],
-  botHand: [],
-
+  deck: [], trumpSuit: "", trumpCard: null,
+  playerHand: [], botHand: [],
   table: [], // [{ attack, defend? }]
   currentPlayer: "player",
   status: "waiting", // "attacking" | "defending"
-  attacker: "player",
-  defender: "bot",
-
-  canAddCards: false,
-  roundActive: true,
-
-  gameId: null,
-  playerId: null,
-  opponentId: null,
-  isMultiplayer: false,
+  attacker: "player", defender: "bot",
+  canAddCards: false, roundActive: true,
+  gameId: null, playerId: null, opponentId: null, isMultiplayer: false,
 };
 
 // ---------------- DOM ----------------
@@ -215,8 +209,6 @@ function renderGame() {
 
   const header = document.createElement("div");
   const deckCount = gameState.deck.length;
-
-  // красивый показ козыря
   const trumpHtml = renderCardInline(gameState.trumpCard, true);
 
   header.innerHTML = `
@@ -275,7 +267,6 @@ function renderActionButtons() {
   const actions = document.createElement("div");
   actions.className = "action-buttons";
 
-  // защитник (игрок) может "взять"
   if (gameState.status === "defending" && gameState.currentPlayer === "player") {
     const takeBtn = document.createElement("button");
     takeBtn.className = "action-btn danger";
@@ -284,7 +275,6 @@ function renderActionButtons() {
     actions.appendChild(takeBtn);
   }
 
-  // все пары защищены — атакующий (если это игрок) может сказать "Бито"
   const allDefended = gameState.table.length > 0 && gameState.table.every((p) => p.defend);
   const playerIsAttacker = gameState.attacker === "player";
   if (allDefended && playerIsAttacker && gameState.currentPlayer === "player" && gameState.status === "attacking") {
@@ -320,8 +310,7 @@ function renderPlayerHand() {
 
     if (clickable) {
       el.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
+        ev.preventDefault(); ev.stopPropagation();
         logDebug('card click', { card: card.rank + card.suit, canAttack, canDefend, status: gameState.status });
         if (canAttack) attackWithCard(card, index);
         else if (canDefend) defendWithCard(card, index);
@@ -350,11 +339,8 @@ function currentDefenderHandLen() {
 }
 
 function canAttackWithCard(card) {
-  // лимит по количеству пар: нельзя подкинуть больше, чем карт у защитника
   const limitOk = gameState.table.length < currentDefenderHandLen();
-
   if (gameState.table.length === 0) return limitOk;
-
   const ranks = ranksOnTable();
   return limitOk && ranks.has(card.rank);
 }
@@ -365,21 +351,17 @@ function canDefendWithCard(card) {
   if (lastPair.defend) return false;
 
   const attackCard = lastPair.attack;
-
   if (card.suit === attackCard.suit && card.value > attackCard.value) return true;
   if (card.suit === gameState.trumpSuit && attackCard.suit !== gameState.trumpSuit) return true;
-
   return false;
 }
 
 // --- Ходы игрока ---
 function attackWithCard(card, index) {
   tg.HapticFeedback?.impactOccurred?.("light");
-
   gameState.playerHand.splice(index, 1);
   gameState.table.push({ attack: card, defend: null });
 
-  // Каждый новый брошенный игроком ход требует защиты бота
   gameState.status = "defending";
   gameState.currentPlayer = "bot";
   gameState.attacker = "player";
@@ -403,9 +385,9 @@ function defendWithCard(card, index) {
 
   const allDefended = gameState.table.every((p) => p.defend);
   if (allDefended) {
-    // Игрок защитился от бота → теперь атакующий (бот) может подкидывать или сказать "бито"
     gameState.status = "attacking";
-    gameState.currentPlayer = gameState.attacker; // здесь attacker === "bot"
+    gameState.currentPlayer = gameState.attacker; // attacker === "bot"
+    showToast("🤖 Отбился");
     setTimeout(botMove, 400);
   }
 }
@@ -420,14 +402,14 @@ function takeCards() {
   gameState.table = [];
   sortHand(gameState.playerHand);
 
-  // защитник (игрок) взял → атакующий остаётся прежним (бот будет атаковать снова)
+  showToast("Вы взяли карты", "warn");
   drawPhaseAfterRound({ defenderTook: true, attacker: "bot", defender: "player" });
 }
 
-// --- Завершить раунд «Бито» (когда атакующий доволен) ---
 function passTurn() {
   tg.HapticFeedback?.impactOccurred?.("light");
   gameState.table = [];
+  showToast("Вы: Бито", "success");
   drawPhaseAfterRound({ defenderTook: false, attacker: gameState.attacker, defender: gameState.defender });
 }
 
@@ -447,6 +429,7 @@ function botAttackOrAdd() {
     const idx = botChooseAttackCard();
     if (idx === -1) {
       gameState.table = [];
+      showToast("🤖 Бито", "success");
       drawPhaseAfterRound({ defenderTook: false, attacker: "bot", defender: "player" });
       return;
     }
@@ -459,11 +442,11 @@ function botAttackOrAdd() {
     gameState.defender = "player";
     gameState.canAddCards = true;
 
+    showToast("🤖 Бот атакует");
     renderGame();
     return;
   }
 
-  // все пары защищены — можно подкинуть (с лимитом)
   const allDefended = gameState.table.every(p => p.defend);
   const canAddMore = gameState.table.length < currentDefenderHandLen();
   if (allDefended && canAddMore) {
@@ -486,15 +469,14 @@ function botAttackOrAdd() {
     }
   }
 
-  // иначе — «бито»
   gameState.table = [];
+  showToast("🤖 Бито", "success");
   drawPhaseAfterRound({ defenderTook: false, attacker: "bot", defender: "player" });
 }
 
 function botDefend() {
   const lastPair = gameState.table[gameState.table.length - 1];
   if (!lastPair || lastPair.defend) {
-    // нечего защищать — вернём ход атакующему (игроку) чтобы он мог подкинуть
     gameState.status = "attacking";
     gameState.currentPlayer = gameState.attacker; // attacker === "player"
     renderGame();
@@ -503,7 +485,6 @@ function botDefend() {
 
   const idx = botChooseDefendCard(lastPair.attack);
   if (idx === -1) {
-    // бот не может защититься → берёт
     for (const pair of gameState.table) {
       gameState.botHand.push(pair.attack);
       if (pair.defend) gameState.botHand.push(pair.defend);
@@ -511,6 +492,7 @@ function botDefend() {
     gameState.table = [];
     sortHand(gameState.botHand);
 
+    showToast("🤖 Бот взял карты", "warn");
     drawPhaseAfterRound({ defenderTook: true, attacker: "player", defender: "bot" });
     return;
   }
@@ -518,9 +500,9 @@ function botDefend() {
   const card = gameState.botHand.splice(idx, 1)[0];
   lastPair.defend = card;
 
-  // Успешно защитился — теперь снова ход атакующего (игрок может подкинуть ещё)
   gameState.status = "attacking";
   gameState.currentPlayer = gameState.attacker; // "player"
+  showToast("🤖 Отбился");
   renderGame();
 }
 
@@ -607,7 +589,6 @@ function renderCardInline(card, isTrump) {
     <span class="rank">${card.rank}</span><span class="suit ${color}">${card.suit}</span>
   </span>`;
 }
-
 function createCardElement(card, clickable) {
   const color = suitColorClass(card.suit);
   const el = document.createElement("div");
@@ -617,13 +598,11 @@ function createCardElement(card, clickable) {
   el.innerHTML = `<span class="rank">${card.rank}</span><span class="suit ${color}">${card.suit}</span>`;
   return el;
 }
-
 function getStatusMessage() {
   if (gameState.status === "attacking")  return gameState.currentPlayer === "player" ? "✅ Ваш ход. Атакуйте!" : "🤖 Бот атакует...";
   if (gameState.status === "defending")  return gameState.currentPlayer === "player" ? "🛡️ Ваш ход. Защищайтесь!" : "🤖 Бот защищается...";
   return "Ожидание...";
 }
-
 function gameOverCheck() {
   const deckEmpty = gameState.deck.length === 0;
   const tableEmpty = gameState.table.length === 0;
@@ -638,7 +617,6 @@ function gameOverCheck() {
   }
   return false;
 }
-
 function endGame(winner) {
   let text = "Ничья!";
   if (winner === "player") text = "🎉 Вы победили!";
