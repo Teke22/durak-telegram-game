@@ -7,7 +7,6 @@ const tg = window.Telegram?.WebApp ?? {
   showPopup({ title, message }) { try { alert(`${title ? title + "\n" : ""}${message ?? ""}`); } catch(_) {} },
   initDataUnsafe: {},
 };
-
 tg.expand?.();
 tg.enableClosingConfirmation?.();
 
@@ -19,7 +18,7 @@ function logDebug(...args) {
   if (!DEBUG) return;
   debugLog.push(args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
   const el = document.getElementById('debug-overlay');
-  if (el) el.textContent = debugLog.slice(-60).join('\n');
+  if (el) el.textContent = debugLog.slice(-80).join('\n');
 }
 function mountDebugOverlay() {
   if (!DEBUG) return;
@@ -40,10 +39,7 @@ function showToast(text, type = 'info', timeout = 1600) {
   el.textContent = text;
   container.appendChild(el);
   requestAnimationFrame(() => el.classList.add('show'));
-  setTimeout(() => {
-    el.classList.remove('show');
-    setTimeout(() => el.remove(), 200);
-  }, timeout);
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 200); }, timeout);
 }
 
 // ---------------- Константы игры ----------------
@@ -53,17 +49,31 @@ const RANK_VALUES = { "6": 6, "7": 7, "8": 8, "9": 9, "10": 10, J: 11, Q: 12, K:
 const HAND_LIMIT = 6;
 function suitColorClass(suit) { return (suit === "♥" || suit === "♦") ? "red" : "black"; }
 
-// ---------------- Глобальное состояние ----------------
+// ---------------- Состояние ----------------
 let gameState = {
   mode: new URLSearchParams(window.location.search).get("mode") || "bot",
-  deck: [], trumpSuit: "", trumpCard: null,
-  playerHand: [], botHand: [],
-  table: [], // [{ attack, defend? }]
+
+  // общие
+  trumpSuit: "", trumpCard: null,
+  table: [],
+
+  // bot-mode
+  deck: [],
+  playerHand: [],
+  botHand: [], // в MP используем как "массив заглушек" для рубашек
   currentPlayer: "player",
-  status: "waiting", // "attacking" | "defending"
-  attacker: "player", defender: "bot",
-  canAddCards: false, roundActive: true,
-  gameId: null, playerId: null, opponentId: null, isMultiplayer: false,
+  status: "waiting", // attacking|defending
+  attacker: "player",
+  defender: "bot",
+  canAddCards: false,
+
+  // multiplayer
+  isMultiplayer: false,
+  deckCount: 0,      // в MP показываем из сервера
+  gameId: null,
+  playerId: null,
+  opponentId: null,
+  mpPollId: null,
 };
 
 // ---------------- DOM ----------------
@@ -88,6 +98,7 @@ function initInterface() {
 
 // ---------------- UI режимов ----------------
 function showBotInterface() {
+  gameState.isMultiplayer = false;
   startButton.style.display = "block";
   startButton.textContent = "🎮 Начать игру с ботом";
   gameBoard.innerHTML = `
@@ -97,10 +108,11 @@ function showBotInterface() {
       <p>Нажмите кнопку ниже, чтобы начать!</p>
     </div>
   `;
-  startButton.onclick = () => { logDebug('start clicked'); initGame(); };
+  startButton.onclick = () => { logDebug('start clicked'); initGameBot(); };
 }
 
 function showMultiplayerJoinPrompt() {
+  gameState.isMultiplayer = true;
   gameBoard.innerHTML = `
     <div style="text-align:center; padding:20px; color:white;">
       <h2>🔗 Присоединиться к игре</h2>
@@ -126,6 +138,7 @@ function showMultiplayerJoinPrompt() {
 }
 
 function showMultiplayerCreateInterface() {
+  gameState.isMultiplayer = true;
   startButton.style.display = "block";
   startButton.textContent = "👥 Создать комнату";
   gameBoard.innerHTML = `
@@ -139,6 +152,7 @@ function showMultiplayerCreateInterface() {
 }
 
 function showMultiplayerJoinInterface(gameId) {
+  gameState.isMultiplayer = true;
   startButton.style.display = "block";
   startButton.textContent = "🎮 Присоединиться к игре";
   gameBoard.innerHTML = `
@@ -161,8 +175,8 @@ function joinWithCode() {
   }
 }
 
-// ---------------- Игровая логика (бот) ----------------
-function initGame() {
+/* ==================== BOT MODE ==================== */
+function initGameBot() {
   tg.HapticFeedback?.impactOccurred?.("light");
   startButton.style.display = "none";
 
@@ -177,7 +191,7 @@ function initGame() {
   gameState.playerHand = drawMany(gameState.deck, HAND_LIMIT);
   gameState.botHand    = drawMany(gameState.deck, HAND_LIMIT);
 
-  // козырь — последняя карта в колоде
+  // козырь — последняя карта
   gameState.trumpCard = gameState.deck[gameState.deck.length - 1];
   gameState.trumpSuit = gameState.trumpCard.suit;
 
@@ -191,30 +205,185 @@ function initGame() {
   gameState.status = "attacking";
   gameState.canAddCards = false;
 
-  logDebug('initGame done', {
-    deck: gameState.deck.length,
-    trump: gameState.trumpCard,
-    player: gameState.playerHand.length,
-    bot: gameState.botHand.length,
-  });
-
   renderGame();
 }
 
-// --- Рендер ---
+/* ==================== MP MODE ==================== */
+const mp = { gameId: null, playerId: null, pollId: null };
+
+async function createMultiplayerGame() {
+  try {
+    const response = await fetch('/api/create-game', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: tg.initDataUnsafe.user?.id || `user_${Date.now()}` })
+    });
+    const data = await response.json();
+
+    mp.gameId = data.gameId;
+    mp.playerId = data.playerId;
+    gameState.gameId = data.gameId;
+    gameState.playerId = data.playerId;
+
+    gameBoard.innerHTML = `
+      <div style="text-align:center; padding: 20px; color: white;">
+        <h2>🎮 Комната создана!</h2>
+        <p>Код комнаты:</p>
+        <div style="font-size: 32px; font-weight: bold; margin: 15px 0; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 10px; color: #333;">
+          ${data.gameId}
+        </div>
+        <p>Ожидание второго игрока...</p>
+        <div style="width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #007aff;border-radius:50%;animation:spin 1s linear infinite;margin:20px auto 0;"></div>
+      </div>
+    `;
+    startButton.style.display = 'none';
+
+    // опрос состояния — ждём статус playing
+    const poll = setInterval(async () => {
+      const r = await fetch(`/api/game/${data.gameId}?playerId=${data.playerId}`);
+      if (!r.ok) return;
+      const s = await r.json();
+      if (s.status === 'playing') {
+        clearInterval(poll);
+        startMultiplayerClient(s);
+      }
+    }, 1200);
+  } catch (e) {
+    console.error('create error', e);
+    showToast('Ошибка создания комнаты', 'warn');
+  }
+}
+
+async function joinMultiplayerGame(gameId) {
+  try {
+    const response = await fetch(`/api/join-game/${gameId}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: tg.initDataUnsafe.user?.id || `user_${Date.now()}` })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const data = await response.json();
+
+    mp.gameId = gameId;
+    mp.playerId = data.playerId;
+    gameState.gameId = gameId;
+    gameState.playerId = data.playerId;
+
+    gameBoard.innerHTML = `
+      <div style="text-align:center; padding:20px; color:white;">
+        <h2>✅ Присоединились!</h2>
+        <p>Ожидание начала игры...</p>
+        <div style="width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #007aff;border-radius:50%;animation:spin 1s linear infinite;margin:20px auto 0;"></div>
+      </div>
+    `;
+    startButton.style.display = 'none';
+
+    const poll = setInterval(async () => {
+      const r = await fetch(`/api/game/${gameId}?playerId=${data.playerId}`);
+      if (!r.ok) return;
+      const s = await r.json();
+      if (s.status === 'playing') {
+        clearInterval(poll);
+        startMultiplayerClient(s);
+      }
+    }, 1200);
+  } catch (e) {
+    console.error('join error', e);
+    showToast('Не удалось присоединиться: проверьте код', 'warn');
+  }
+}
+
+function startMultiplayerClient(serverState) {
+  gameState.isMultiplayer = true;
+  mp.gameId = serverState.id || mp.gameId;
+  mp.playerId = serverState.you || mp.playerId;
+  gameState.opponentId = serverState.opponentId || null;
+
+  applyServerState(serverState);
+  renderGame();
+
+  if (mp.pollId) clearInterval(mp.pollId);
+  mp.pollId = setInterval(refreshGameFromServer, 1200);
+}
+
+async function refreshGameFromServer() {
+  if (!mp.gameId || !mp.playerId) return;
+  try {
+    const r = await fetch(`/api/game/${mp.gameId}?playerId=${mp.playerId}`);
+    if (!r.ok) return;
+    const s = await r.json();
+    applyServerState(s);
+    renderGame();
+    if (s.status === 'finished') {
+      clearInterval(mp.pollId);
+      // Показ конца игры отрисуется в renderGame() через endGame()
+    }
+  } catch (_) {}
+}
+
+function applyServerState(s) {
+  if (!s || !s.status) return;
+
+  gameState.trumpSuit = s.trumpSuit || gameState.trumpSuit;
+  gameState.trumpCard = s.trumpCard || gameState.trumpCard;
+  gameState.table = s.table || [];
+
+  // кто есть кто
+  const you = s.you;
+  const attackerIsYou = s.attacker === you;
+  const defenderIsYou = s.defender === you;
+
+  gameState.attacker = attackerIsYou ? 'player' : 'bot';
+  gameState.defender = defenderIsYou ? 'player' : 'bot';
+  gameState.currentPlayer = (s.currentPlayer === you) ? 'player' : 'bot';
+  gameState.status = s.phase || 'attacking';
+
+  // руки
+  gameState.playerHand = s.hand || [];
+  const oppCount = s.opponentCount ?? 0;
+  gameState.botHand = Array.from({ length: oppCount }, () => null); // для рубашек
+  gameState.deckCount = s.deckCount ?? 0;
+
+  // победа
+  if (s.status === 'finished') {
+    const winnerId = s.winnerId;
+    if (!winnerId) endGame('draw');
+    else if (winnerId === you) endGame('player');
+    else endGame('bot');
+  }
+}
+
+async function sendMove(action, card) {
+  if (!mp.gameId || !mp.playerId) return;
+  try {
+    const r = await fetch(`/api/game/${mp.gameId}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: mp.playerId, action, card })
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      showToast(data?.error || 'Ошибка хода', 'warn');
+    } else {
+      // успех — скоро poll подтянет состояние
+    }
+  } catch (e) {
+    showToast('Сеть недоступна', 'warn');
+  }
+}
+
+/* ==================== Рендер (общий) ==================== */
 function renderGame() {
   gameBoard.innerHTML = "";
 
   const header = document.createElement("div");
-  const deckCount = gameState.deck.length;
-  const trumpHtml = renderCardInline(gameState.trumpCard, true);
+  const deckCount = gameState.isMultiplayer ? gameState.deckCount : gameState.deck.length;
+  const trumpHtml = gameState.trumpCard ? renderCardInline(gameState.trumpCard, true) : '';
 
   header.innerHTML = `
     <h2>🎴 Подкидной дурак</h2>
     <div class="trump-info">
       <div class="trump-card">
         <span class="trump-badge">Козырь</span>
-        ${trumpHtml}
+        ${trumpHtml || '<span style="font-weight:700;">—</span>'}
       </div>
       <div style="margin-top:6px;">В колоде: ${deckCount} карт</div>
     </div>
@@ -222,41 +391,29 @@ function renderGame() {
   `;
   gameBoard.appendChild(header);
 
-  // Рука бота (рубашкой)
+  // "рука" соперника (рубашки)
   renderOpponentHand();
 
   if (gameState.table.length > 0) renderTable();
   renderActionButtons();
   renderPlayerHand();
-
-  logDebug('render', {
-    status: gameState.status,
-    current: gameState.currentPlayer,
-    table: gameState.table,
-    player: gameState.playerHand.map(c=>c.rank+c.suit).join(' '),
-    bot: gameState.botHand.length,
-  });
 }
 
 function renderOpponentHand() {
-  const n = gameState.botHand.length;
+  const n = gameState.botHand?.length || 0;
   const section = document.createElement('div');
   section.className = 'opponent-section';
-  section.innerHTML = `<h3>Карты бота: ${n}</h3>`;
+  const title = gameState.isMultiplayer ? 'Карты соперника' : 'Карты бота';
+  section.innerHTML = `<h3>${title}: ${n}</h3>`;
 
-  const row = document.createElement('div');
-  row.className = 'opponent-cards';
-
-  // Показываем максимум 12 рубашек, остальное «веером»
+  const row = document.createElement('div'); row.className = 'opponent-cards';
   const visible = Math.min(n, 12);
   for (let i = 0; i < visible; i++) {
     const back = document.createElement('div');
     back.className = 'card back';
-    back.setAttribute('aria-label', 'Карта бота (рубашка)');
+    back.setAttribute('aria-label', 'Карта соперника (рубашка)');
     row.appendChild(back);
   }
-
-  // Если карт больше 12 — добавим компактный индикатор
   if (n > 12) {
     const more = document.createElement('div');
     more.className = 'card back';
@@ -269,7 +426,6 @@ function renderOpponentHand() {
     more.textContent = `+${n - 12}`;
     row.appendChild(more);
   }
-
   section.appendChild(row);
   gameBoard.appendChild(section);
 }
@@ -287,7 +443,6 @@ function renderTable() {
     pairEl.className = "card-pair";
 
     pairEl.appendChild(createCardElement(pair.attack, false));
-
     if (pair.defend) {
       const defendEl = createCardElement(pair.defend, false);
       defendEl.classList.add("defended");
@@ -304,21 +459,28 @@ function renderActionButtons() {
   const actions = document.createElement("div");
   actions.className = "action-buttons";
 
+  const allDefended = gameState.table.length > 0 && gameState.table.every((p) => p.defend);
+  const playerIsAttacker = gameState.attacker === "player";
+
   if (gameState.status === "defending" && gameState.currentPlayer === "player") {
     const takeBtn = document.createElement("button");
     takeBtn.className = "action-btn danger";
     takeBtn.textContent = "Взять карты";
-    takeBtn.addEventListener('click', takeCards);
+    takeBtn.addEventListener('click', () => {
+      if (gameState.isMultiplayer) sendMove('take');
+      else takeCardsBot();
+    });
     actions.appendChild(takeBtn);
   }
 
-  const allDefended = gameState.table.length > 0 && gameState.table.every((p) => p.defend);
-  const playerIsAttacker = gameState.attacker === "player";
   if (allDefended && playerIsAttacker && gameState.currentPlayer === "player" && gameState.status === "attacking") {
     const passBtn = document.createElement("button");
     passBtn.className = "action-btn success";
     passBtn.textContent = "Бито";
-    passBtn.addEventListener('click', passTurn);
+    passBtn.addEventListener('click', () => {
+      if (gameState.isMultiplayer) sendMove('pass');
+      else passTurnBot();
+    });
     actions.appendChild(passBtn);
   }
 
@@ -334,13 +496,8 @@ function renderPlayerHand() {
   playerCards.className = "player-cards";
 
   gameState.playerHand.forEach((card, index) => {
-    const canAttack = gameState.status === "attacking"
-      && gameState.currentPlayer === "player"
-      && canAttackWithCard(card);
-
-    const canDefend = gameState.status === "defending"
-      && gameState.currentPlayer === "player"
-      && canDefendWithCard(card);
+    const canAttack = gameState.status === "attacking" && gameState.currentPlayer === "player" && canAttackWithCardLocal(card);
+    const canDefend = gameState.status === "defending" && gameState.currentPlayer === "player" && canDefendWithCardLocal(card);
 
     const clickable = canAttack || canDefend;
     const el = createCardElement(card, clickable);
@@ -348,12 +505,15 @@ function renderPlayerHand() {
     if (clickable) {
       el.addEventListener('click', (ev) => {
         ev.preventDefault(); ev.stopPropagation();
-        logDebug('card click', { card: card.rank + card.suit, canAttack, canDefend, status: gameState.status });
-        if (canAttack) attackWithCard(card, index);
-        else if (canDefend) defendWithCard(card, index);
+        if (gameState.isMultiplayer) {
+          const action = canAttack ? 'attack' : 'defend';
+          sendMove(action, { rank: card.rank, suit: card.suit });
+        } else {
+          if (canAttack) attackWithCardBot(card, index);
+          else if (canDefend) defendWithCardBot(card, index);
+        }
       }, { passive: true });
     }
-
     playerCards.appendChild(el);
   });
 
@@ -361,8 +521,8 @@ function renderPlayerHand() {
   gameBoard.appendChild(handSection);
 }
 
-// --- Проверки возможности хода ---
-function ranksOnTable() {
+/* --------- Локальная проверка (для кликабельности) --------- */
+function ranksOnTableLocal() {
   const ranks = new Set();
   for (const p of gameState.table) {
     ranks.add(p.attack.rank);
@@ -370,31 +530,31 @@ function ranksOnTable() {
   }
   return ranks;
 }
-
-function currentDefenderHandLen() {
-  return gameState.defender === "player" ? gameState.playerHand.length : gameState.botHand.length;
+function currentDefenderHandLenLocal() {
+  if (gameState.isMultiplayer) {
+    return gameState.defender === 'player' ? gameState.playerHand.length : gameState.botHand.length;
+  } else {
+    return gameState.defender === 'player' ? gameState.playerHand.length : gameState.botHand.length;
+  }
 }
-
-function canAttackWithCard(card) {
-  const limitOk = gameState.table.length < currentDefenderHandLen();
+function canAttackWithCardLocal(card) {
+  const limitOk = gameState.table.length < currentDefenderHandLenLocal();
   if (gameState.table.length === 0) return limitOk;
-  const ranks = ranksOnTable();
+  const ranks = ranksOnTableLocal();
   return limitOk && ranks.has(card.rank);
 }
-
-function canDefendWithCard(card) {
+function canDefendWithCardLocal(card) {
   if (gameState.table.length === 0) return false;
   const lastPair = gameState.table[gameState.table.length - 1];
   if (lastPair.defend) return false;
-
   const attackCard = lastPair.attack;
   if (card.suit === attackCard.suit && card.value > attackCard.value) return true;
   if (card.suit === gameState.trumpSuit && attackCard.suit !== gameState.trumpSuit) return true;
   return false;
 }
 
-// --- Ходы игрока ---
-function attackWithCard(card, index) {
+/* ==================== BOT-only логика (как раньше) ==================== */
+function attackWithCardBot(card, index) {
   tg.HapticFeedback?.impactOccurred?.("light");
   gameState.playerHand.splice(index, 1);
   gameState.table.push({ attack: card, defend: null });
@@ -408,18 +568,13 @@ function attackWithCard(card, index) {
   renderGame();
   setTimeout(botMove, 400);
 }
-
-function defendWithCard(card, index) {
+function defendWithCardBot(card, index) {
   tg.HapticFeedback?.impactOccurred?.("light");
-
   const lastPair = gameState.table[gameState.table.length - 1];
   if (!lastPair || lastPair.defend) return;
-
   gameState.playerHand.splice(index, 1);
   lastPair.defend = card;
-
   renderGame();
-
   const allDefended = gameState.table.every((p) => p.defend);
   if (allDefended) {
     gameState.status = "attacking";
@@ -428,66 +583,52 @@ function defendWithCard(card, index) {
     setTimeout(botMove, 400);
   }
 }
-
-function takeCards() {
+function takeCardsBot() {
   tg.HapticFeedback?.impactOccurred?.("heavy");
-
   for (const pair of gameState.table) {
     gameState.playerHand.push(pair.attack);
     if (pair.defend) gameState.playerHand.push(pair.defend);
   }
   gameState.table = [];
   sortHand(gameState.playerHand);
-
   showToast("Вы взяли карты", "warn");
-  drawPhaseAfterRound({ defenderTook: true, attacker: "bot", defender: "player" });
+  drawPhaseAfterRoundBot({ defenderTook: true, attacker: "bot", defender: "player" });
 }
-
-function passTurn() {
+function passTurnBot() {
   tg.HapticFeedback?.impactOccurred?.("light");
   gameState.table = [];
   showToast("Вы: Бито", "success");
-  drawPhaseAfterRound({ defenderTook: false, attacker: gameState.attacker, defender: gameState.defender });
+  drawPhaseAfterRoundBot({ defenderTook: false, attacker: gameState.attacker, defender: gameState.defender });
 }
-
-// --- Ходы бота ---
 function botMove() {
-  if (gameOverCheck()) return;
-
-  if (gameState.status === "attacking" && gameState.currentPlayer === "bot") {
-    botAttackOrAdd();
-  } else if (gameState.status === "defending" && gameState.currentPlayer === "bot") {
-    botDefend();
-  }
+  if (gameOverCheckBot()) return;
+  if (gameState.status === "attacking" && gameState.currentPlayer === "bot") botAttackOrAdd();
+  else if (gameState.status === "defending" && gameState.currentPlayer === "bot") botDefend();
 }
-
 function botAttackOrAdd() {
   if (gameState.table.length === 0) {
     const idx = botChooseAttackCard();
     if (idx === -1) {
       gameState.table = [];
       showToast("🤖 Бито", "success");
-      drawPhaseAfterRound({ defenderTook: false, attacker: "bot", defender: "player" });
+      drawPhaseAfterRoundBot({ defenderTook: false, attacker: "bot", defender: "player" });
       return;
     }
     const card = gameState.botHand.splice(idx, 1)[0];
     gameState.table.push({ attack: card, defend: null });
-
     gameState.status = "defending";
     gameState.currentPlayer = "player";
     gameState.attacker = "bot";
     gameState.defender = "player";
     gameState.canAddCards = true;
-
     showToast("🤖 Бот атакует");
     renderGame();
     return;
   }
-
   const allDefended = gameState.table.every(p => p.defend);
-  const canAddMore = gameState.table.length < currentDefenderHandLen();
+  const canAddMore = gameState.table.length < currentDefenderHandLenLocal();
   if (allDefended && canAddMore) {
-    const rset = ranksOnTable();
+    const rset = ranksOnTableLocal();
     let addIdx = -1;
     for (let i = 0; i < gameState.botHand.length; i++) {
       if (rset.has(gameState.botHand[i].rank)) { addIdx = i; break; }
@@ -495,22 +636,18 @@ function botAttackOrAdd() {
     if (addIdx !== -1) {
       const addCard = gameState.botHand.splice(addIdx, 1)[0];
       gameState.table.push({ attack: addCard, defend: null });
-
       gameState.status = "defending";
       gameState.currentPlayer = "player";
       gameState.attacker = "bot";
       gameState.defender = "player";
-
       renderGame();
       return;
     }
   }
-
   gameState.table = [];
   showToast("🤖 Бито", "success");
-  drawPhaseAfterRound({ defenderTook: false, attacker: "bot", defender: "player" });
+  drawPhaseAfterRoundBot({ defenderTook: false, attacker: "bot", defender: "player" });
 }
-
 function botDefend() {
   const lastPair = gameState.table[gameState.table.length - 1];
   if (!lastPair || lastPair.defend) {
@@ -519,7 +656,6 @@ function botDefend() {
     renderGame();
     return;
   }
-
   const idx = botChooseDefendCard(lastPair.attack);
   if (idx === -1) {
     for (const pair of gameState.table) {
@@ -528,22 +664,17 @@ function botDefend() {
     }
     gameState.table = [];
     sortHand(gameState.botHand);
-
     showToast("🤖 Бот взял карты", "warn");
-    drawPhaseAfterRound({ defenderTook: true, attacker: "player", defender: "bot" });
+    drawPhaseAfterRoundBot({ defenderTook: true, attacker: "player", defender: "bot" });
     return;
   }
-
   const card = gameState.botHand.splice(idx, 1)[0];
   lastPair.defend = card;
-
   gameState.status = "attacking";
   gameState.currentPlayer = gameState.attacker; // "player"
   showToast("🤖 Отбился");
   renderGame();
 }
-
-// --- Выбор карт ботом ---
 function botChooseAttackCard() {
   if (gameState.table.length === 0) {
     let best = -1, bestVal = Infinity;
@@ -554,12 +685,11 @@ function botChooseAttackCard() {
     }
     return best;
   } else {
-    const rset = ranksOnTable();
+    const rset = ranksOnTableLocal();
     for (let i = 0; i < gameState.botHand.length; i++) if (rset.has(gameState.botHand[i].rank)) return i;
     return -1;
   }
 }
-
 function botChooseDefendCard(attackCard) {
   let best = -1, bestVal = Infinity;
   for (let i = 0; i < gameState.botHand.length; i++) {
@@ -567,17 +697,13 @@ function botChooseDefendCard(attackCard) {
     if (c.suit === attackCard.suit && c.value > attackCard.value) {
       if (c.value < bestVal) { bestVal = c.value; best = i; }
     } else if (c.suit === gameState.trumpSuit && attackCard.suit !== gameState.trumpSuit) {
-      const val = c.value + 100;
-      if (val < bestVal) { bestVal = val; best = i; }
+      const val = c.value + 100; if (val < bestVal) { bestVal = val; best = i; }
     }
   }
   return best;
 }
-
-// --- Добор после раунда ---
-function drawPhaseAfterRound({ defenderTook, attacker, defender }) {
+function drawPhaseAfterRoundBot({ defenderTook, attacker, defender }) {
   const drawOne = (hand) => { if (gameState.deck.length > 0) hand.push(gameState.deck.pop()); };
-
   const first  = attacker === "player" ? gameState.playerHand : gameState.botHand;
   const second = defender === "player" ? gameState.playerHand : gameState.botHand;
 
@@ -585,7 +711,6 @@ function drawPhaseAfterRound({ defenderTook, attacker, defender }) {
     if (first.length  < HAND_LIMIT) drawOne(first);
     if (second.length < HAND_LIMIT) drawOne(second);
   }
-
   sortHand(gameState.playerHand);
   sortHand(gameState.botHand);
 
@@ -599,10 +724,24 @@ function drawPhaseAfterRound({ defenderTook, attacker, defender }) {
 
   renderGame();
   if (gameState.currentPlayer === "bot") setTimeout(botMove, 400);
-  gameOverCheck();
+  gameOverCheckBot();
+}
+function gameOverCheckBot() {
+  const deckEmpty = gameState.deck.length === 0;
+  const tableEmpty = gameState.table.length === 0;
+  if (!tableEmpty) return false;
+  const playerEmpty = gameState.playerHand.length === 0;
+  const botEmpty = gameState.botHand.length === 0;
+  if (deckEmpty && (playerEmpty || botEmpty)) {
+    if (playerEmpty && botEmpty) endGame("draw");
+    else if (playerEmpty) endGame("player");
+    else endGame("bot");
+    return true;
+  }
+  return false;
 }
 
-// --- Вспомогательные ---
+/* ---------------- Вспомогательные (общие) ---------------- */
 function shuffleDeck(deck) {
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -636,35 +775,27 @@ function createCardElement(card, clickable) {
   return el;
 }
 function getStatusMessage() {
-  if (gameState.status === "attacking")  return gameState.currentPlayer === "player" ? "✅ Ваш ход. Атакуйте!" : "🤖 Бот атакует...";
-  if (gameState.status === "defending")  return gameState.currentPlayer === "player" ? "🛡️ Ваш ход. Защищайтесь!" : "🤖 Бот защищается...";
+  if (gameState.status === "attacking")  return gameState.currentPlayer === "player" ? "✅ Ваш ход. Атакуйте!" : "⏳ Ожидаем ход соперника…";
+  if (gameState.status === "defending")  return gameState.currentPlayer === "player" ? "🛡️ Ваш ход. Защищайтесь!" : "⏳ Соперник защищается…";
   return "Ожидание...";
-}
-function gameOverCheck() {
-  const deckEmpty = gameState.deck.length === 0;
-  const tableEmpty = gameState.table.length === 0;
-  if (!tableEmpty) return false;
-  const playerEmpty = gameState.playerHand.length === 0;
-  const botEmpty = gameState.botHand.length === 0;
-  if (deckEmpty && (playerEmpty || botEmpty)) {
-    if (playerEmpty && botEmpty) endGame("draw");
-    else if (playerEmpty) endGame("player");
-    else endGame("bot");
-    return true;
-  }
-  return false;
 }
 function endGame(winner) {
   let text = "Ничья!";
   if (winner === "player") text = "🎉 Вы победили!";
-  if (winner === "bot")    text = "🤖 Бот победил!";
+  if (winner === "bot")    text = "🤖 Соперник победил!";
   gameBoard.innerHTML = `
     <div class="game-over">
       <h2>Игра окончена!</h2>
       <div class="winner">${text}</div>
-      <button onclick="location.reload()" style="padding:12px 24px; border-radius:8px; border:none; background:#007aff; color:white; cursor:pointer;">🔄 Играть снова</button>
+      <button onclick="location.href='/?mode=bot${DEBUG ? '&debug=1' : ''}'" style="padding:12px 24px; border-radius:8px; border:none; background:#007aff; color:white; cursor:pointer; margin-right:8px;">🎮 С ботом</button>
+      <button onclick="location.href='/?mode=create${DEBUG ? '&debug=1' : ''}'" style="padding:12px 24px; border-radius:8px; border:none; background:#28a745; color:white; cursor:pointer;">👥 Новый матч</button>
     </div>`;
 }
 
-// Запуск
+// Глобально
 initInterface();
+
+// Стили анимации спиннера (если ещё нет)
+const style = document.createElement('style');
+style.textContent = `@keyframes spin { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }`;
+document.head.appendChild(style);
