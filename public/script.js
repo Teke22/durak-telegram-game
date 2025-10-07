@@ -1,7 +1,11 @@
-/* public/script.js — compact client with trump highlight, sorted hands and inline join UI
-Исправление: при успешной защите (бот отбил) не делаем refill/swap сразу.
-Атакующему даём возможность подкинуть дополнительные карты или нажать "Бито".
-*/
+/*
+public/script.js — исправления для надёжной реакции бота после атаки
+
+* надёжный выбор защиты (same-suit higher, иначе минимальный козырь)
+* учитываем value и RANK_VALUES как запасной вариант
+* добавлены console.log для отладки (можно удалить)
+* минимальная задержка ответа бота уменьшена
+  */
 
 const tg = window.Telegram?.WebApp ?? {
 expand() {},
@@ -13,7 +17,7 @@ try { tg.expand?.(); } catch(e){}
 
 const RANK_VALUES = { '6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13,'A':14 };
 const ORDERED_RANKS = ['6','7','8','9','10','J','Q','K','A'];
-const SUIT_ORDER = ['♣','♦','♥','♠']; // suit sorting order for non-trumps
+const SUIT_ORDER = ['♣','♦','♥','♠'];
 const API = { create: '/api/create-game', join: (id) => `/api/join-game/${id}`, game: (id) => `/api/game/${id}`, move: (id) => `/api/game/${id}/move` };
 
 const el = {
@@ -32,23 +36,21 @@ function setAssignedId(id){ if (!el.assigned) return; el.assigned.textContent = 
 function rankIndex(r){ return ORDERED_RANKS.indexOf(r); }
 function suitIndex(s){ return SUIT_ORDER.indexOf(s); }
 
-// Sort hand: non-trumps first sorted by suit then rank asc, then trumps at end sorted by rank asc
 function sortHand(hand, trumpSuit){
 hand.sort((a,b) => {
 const aIsTrump = a.suit === trumpSuit;
 const bIsTrump = b.suit === trumpSuit;
-if (aIsTrump !== bIsTrump) return aIsTrump ? 1 : -1; // non-trumps first
+if (aIsTrump !== bIsTrump) return aIsTrump ? 1 : -1;
 if (!aIsTrump && !bIsTrump) {
 const su = suitIndex(a.suit) - suitIndex(b.suit);
 if (su !== 0) return su;
 return rankIndex(a.rank) - rankIndex(b.rank);
 }
-// both trumps: sort by rank
 return rankIndex(a.rank) - rankIndex(b.rank);
 });
 }
 
-/* ---------- Local bot (logic corrected) ---------- */
+/* ---------- Local bot (fixed) ---------- */
 const LOCAL = { deck: [], playerHand: [], botHand: [], table: [], trumpSuit: null, trumpCard: null, attacker: 'player', defender: 'bot', currentPlayer: 'player', phase: 'attacking', status: 'idle', roundMax: null };
 const RANKS = ['6','7','8','9','10','J','Q','K','A'];
 const SUITS = ['♠','♥','♦','♣'];
@@ -68,7 +70,7 @@ sortHand(LOCAL.playerHand, LOCAL.trumpSuit); sortHand(LOCAL.botHand, LOCAL.trump
 renderAllLocal();
 }
 
-/* rendering with trump highlight */
+/* rendering */
 function renderAllLocal(){
 renderSeatsLocal();
 el.board.innerHTML='';
@@ -87,38 +89,20 @@ function renderTableLocal(){ const sec=document.createElement('div'); sec.classN
 function renderActionButtonsLocal(){
 const actions=document.createElement('div'); actions.className='action-buttons';
 const allDef = LOCAL.table.length>0 && LOCAL.table.every(p=>p.defend);
-
-// Defender (player) can take only when it's their defend phase
 if (LOCAL.phase==='defending' && LOCAL.currentPlayer==='player'){
 const take=document.createElement('button'); take.className='secondary danger'; take.textContent='Взять'; take.onclick=takeCardsLocal; actions.appendChild(take);
 }
-
-// Attacker (player) sees "Бито" only when all pairs are defended and it's their turn to decide
 if (allDef && LOCAL.currentPlayer==='player' && LOCAL.attacker==='player'){
 const b=document.createElement('button'); b.className='secondary'; b.textContent='Бито'; b.onclick=()=>{ passLocal(); }; actions.appendChild(b);
 }
-
 if (actions.children.length) el.board.appendChild(actions);
 }
 
 function renderPlayerHandLocal(){
-const sec=document.createElement('div'); sec.className='hand-section'; sec.innerHTML='<h3>Ваши карты:</h3>';
-const row=document.createElement('div'); row.className='player-cards';
-LOCAL.playerHand.forEach((card,idx)=>{
-const canAttack = LOCAL.phase==='attacking' && LOCAL.currentPlayer==='player' && LOCAL.attacker==='player';
-const canDefend = LOCAL.phase==='defending' && LOCAL.currentPlayer==='player' && LOCAL.defender==='player';
-const clickable = (canAttack && canAttackLocal(card)) || (canDefend && canDefendLocal(card));
-const n=cardNode(card, clickable);
-if (card.suit === LOCAL.trumpSuit) n.classList.add('trump');
-if (clickable) n.addEventListener('click', ()=>{
-if (canAttack && canAttackLocal(card)) attackLocal(idx);
-else if (canDefend && canDefendLocal(card)) defendLocal(idx);
-});
-row.appendChild(n);
-});
+const sec=document.createElement('div'); sec.className='hand-section'; sec.innerHTML='<h3>Ваши карты:</h3>'; const row=document.createElement('div'); row.className='player-cards';
+LOCAL.playerHand.forEach((card,idx)=>{ const canAttack = LOCAL.phase==='attacking' && LOCAL.currentPlayer==='player' && LOCAL.attacker==='player'; const canDefend = LOCAL.phase==='defending' && LOCAL.currentPlayer==='player' && LOCAL.defender==='player'; const clickable = (canAttack && canAttackLocal(card)) || (canDefend && canDefendLocal(card)); const n=cardNode(card, clickable); if (card.suit === LOCAL.trumpSuit) n.classList.add('trump'); if (clickable) n.addEventListener('click', ()=>{ if (canAttack && canAttackLocal(card)) attackLocal(idx); else if (canDefend && canDefendLocal(card)) defendLocal(idx); }); row.appendChild(n); });
 sec.appendChild(row); el.board.appendChild(sec);
 }
-
 function cardNode(card, clickable){ const d=document.createElement('div'); d.className='card' + (clickable? ' clickable':''); const suitClass=(card.suit==='♥'||card.suit==='♦')? 'suit red':'suit black'; d.innerHTML = `<div class="${suitClass}">${card.suit}</div><div style="font-size:16px">${card.rank}</div>`; return d; }
 
 function canAttackLocal(card){
@@ -130,7 +114,7 @@ function canDefendLocal(card){
 if (LOCAL.table.length===0) return false;
 const last = LOCAL.table[LOCAL.table.length-1];
 if (!last || last.defend) return false;
-if (card.suit === last.attack.suit && card.value > last.attack.value) return true;
+if (card.suit === last.attack.suit && (card.value ?? RANK_VALUES[card.rank]) > (last.attack.value ?? RANK_VALUES[last.attack.rank])) return true;
 if (card.suit === LOCAL.trumpSuit && last.attack.suit !== LOCAL.trumpSuit) return true;
 return false;
 }
@@ -143,7 +127,8 @@ LOCAL.phase='defending';
 LOCAL.currentPlayer='bot';
 sortHand(LOCAL.playerHand, LOCAL.trumpSuit);
 renderAllLocal();
-setTimeout(botMoveLocal, 500);
+// вызываем сразу, но с небольшой задержкой — чтобы UI обновился
+setTimeout(()=>{ try{ botMoveLocal(); } catch(e){ console.error('botMoveLocal error', e); } }, 250);
 }
 
 function defendLocal(index){
@@ -153,18 +138,16 @@ const played = LOCAL.playerHand.splice(index,1)[0];
 last.defend = played;
 const allDef = LOCAL.table.every(p=>p.defend);
 if (allDef){
-// all defended -> attacker can add more or press "Бито"
 LOCAL.phase='attacking';
 LOCAL.currentPlayer = LOCAL.attacker;
 sortHand(LOCAL.playerHand, LOCAL.trumpSuit);
 renderAllLocal();
-// Do NOT call refill here — attacker must decide to pass (Бито) or add.
+// НЕ делаем refill — attacker decides
 } else {
-// still some pairs unprotected -> defender may continue to defend (if multiple attacks queued)
 LOCAL.currentPlayer = 'bot';
 sortHand(LOCAL.playerHand, LOCAL.trumpSuit);
 renderAllLocal();
-setTimeout(botMoveLocal, 400);
+setTimeout(()=>{ try{ botMoveLocal(); } catch(e){ console.error('botMoveLocal error', e); } }, 250);
 }
 }
 
@@ -177,11 +160,7 @@ showToast('Вы взяли карты');
 }
 
 function passLocal(){
-// Attacker declares "Бито" -> round finishes, draw and swap roles
-if (!(LOCAL.table.length > 0 && LOCAL.table.every(p => p.defend))) {
-showToast('Нельзя бить: не все пары защищены');
-return;
-}
+if (!(LOCAL.table.length > 0 && LOCAL.table.every(p => p.defend))) { showToast('Нельзя бить: не все пары защищены'); return; }
 LOCAL.table = [];
 LOCAL.roundMax = null;
 refillLocal(false);
@@ -196,102 +175,124 @@ while ((attHand.length<6 || defHand.length<6) && LOCAL.deck.length){
 if (attHand.length<6) drawOne(attHand);
 if (defHand.length<6) drawOne(defHand);
 }
-if (!defenderTook){
-const prev = LOCAL.attacker; LOCAL.attacker = LOCAL.defender; LOCAL.defender = prev;
-}
+if (!defenderTook){ const prev = LOCAL.attacker; LOCAL.attacker = LOCAL.defender; LOCAL.defender = prev; }
 LOCAL.phase='attacking';
 LOCAL.currentPlayer=LOCAL.attacker;
 LOCAL.roundMax = null;
 sortHand(LOCAL.playerHand, LOCAL.trumpSuit);
 sortHand(LOCAL.botHand, LOCAL.trumpSuit);
 renderAllLocal();
-if (LOCAL.currentPlayer==='bot') setTimeout(botMoveLocal, 400);
+if (LOCAL.currentPlayer==='bot') setTimeout(()=>{ try{ botMoveLocal(); } catch(e){ console.error('botMoveLocal error', e); } }, 300);
 }
 
+/* Improved and robust bot defense/attack logic */
 function botMoveLocal(){
+console.log('[botMoveLocal] phase=', LOCAL.phase, 'currentPlayer=', LOCAL.currentPlayer, 'attacker=', LOCAL.attacker, 'defender=', LOCAL.defender);
 if (LOCAL.phase==='attacking'){
-// bot attacks when it's its turn
+// Bot acts as attacker
 if (LOCAL.table.length===0){
 if (LOCAL.botHand.length===0){ passLocal(); return; }
-// choose weakest non-trump first
-let best=0,bVal=Infinity;
+// choose weakest non-trump if possible, else weakest trump
+let bestIdx = 0; let bestScore = Infinity;
 for (let i=0;i<LOCAL.botHand.length;i++){
-const c=LOCAL.botHand[i]; const v=(c.suit===LOCAL.trumpSuit?100+c.value:c.value);
-if (v<bVal){ bVal=v; best=i; }
+const c = LOCAL.botHand[i];
+const v = (c.suit === LOCAL.trumpSuit ? 100 + (c.value ?? RANK_VALUES[c.rank]) : (c.value ?? RANK_VALUES[c.rank]));
+if (v < bestScore){ bestScore = v; bestIdx = i; }
 }
-const card = LOCAL.botHand.splice(best,1)[0];
+const card = LOCAL.botHand.splice(bestIdx,1)[0];
 LOCAL.table.push({ attack: card, defend: null });
-LOCAL.phase='defending'; LOCAL.currentPlayer='player'; sortHand(LOCAL.botHand, LOCAL.trumpSuit);
+LOCAL.phase = 'defending';
+LOCAL.currentPlayer = 'player';
+sortHand(LOCAL.botHand, LOCAL.trumpSuit);
 showToast('Бот атакует');
 renderAllLocal();
 return;
 } else {
-// bot may add extra attack cards (if rules allow for bot when it's attacker)
+// Bot may add cards (if allowed)
 const ranks=new Set(); LOCAL.table.forEach(p=>{ ranks.add(p.attack.rank); if (p.defend) ranks.add(p.defend.rank); });
-if (LOCAL.table.length < (LOCAL.defender==='player'?LOCAL.playerHand.length:LOCAL.botHand.length)){
+const defenderCapacity = LOCAL.defender === 'player' ? LOCAL.playerHand.length : LOCAL.botHand.length;
+if (LOCAL.table.length < defenderCapacity){
 for (let i=0;i<LOCAL.botHand.length;i++){
 if (ranks.has(LOCAL.botHand[i].rank)){
 const card = LOCAL.botHand.splice(i,1)[0];
 LOCAL.table.push({ attack: card, defend: null });
-LOCAL.phase='defending'; LOCAL.currentPlayer='player';
+LOCAL.phase='defending';
+LOCAL.currentPlayer='player';
 sortHand(LOCAL.botHand, LOCAL.trumpSuit);
 renderAllLocal();
 return;
 }
 }
 }
-// can't/doesn't add -> finish attack
+// can't add -> finish attack
 passLocal();
 return;
 }
 } else if (LOCAL.phase==='defending'){
-// bot defends
-const last = LOCAL.table[LOCAL.table.length-1];
+// Bot defends the last attack
+const last = LOCAL.table[LOCAL.table.length - 1];
+console.log('[bot defend] last attack=', last && last.attack);
 if (!last || last.defend){
-// nothing to do
-LOCAL.phase='attacking'; LOCAL.currentPlayer = LOCAL.attacker;
+// nothing to defend; set phase to attacking and return
+LOCAL.phase='attacking';
+LOCAL.currentPlayer = LOCAL.attacker;
 renderAllLocal();
-if (LOCAL.currentPlayer==='bot') setTimeout(botMoveLocal, 400);
+if (LOCAL.currentPlayer === 'bot') setTimeout(()=>{ try{ botMoveLocal(); } catch(e){ console.error('botMoveLocal error', e); } }, 300);
 return;
 }
 
 ```
-let idx=-1;
+// Find same-suit higher card (smallest such), else smallest trump
+let sameSuitIdx = -1; let sameSuitVal = Infinity;
+let trumpIdx = -1; let trumpVal = Infinity;
+
 for (let i=0;i<LOCAL.botHand.length;i++){
-  const c=LOCAL.botHand[i];
-  if (c.suit===last.attack.suit && c.value>last.attack.value){ idx=i; break; }
-  if (c.suit===LOCAL.trumpSuit && last.attack.suit!==LOCAL.trumpSuit){ idx=i; break; }
+  const c = LOCAL.botHand[i];
+  const cVal = (c.value ?? RANK_VALUES[c.rank]);
+  // same suit and higher
+  if (c.suit === last.attack.suit && cVal > (last.attack.value ?? RANK_VALUES[last.attack.rank])){
+    if (cVal < sameSuitVal){ sameSuitVal = cVal; sameSuitIdx = i; }
+  }
+  // trump candidate
+  if (c.suit === LOCAL.trumpSuit && last.attack.suit !== LOCAL.trumpSuit){
+    if (cVal < trumpVal){ trumpVal = cVal; trumpIdx = i; }
+  }
 }
 
-if (idx===-1){
-  // bot can't defend -> take cards
-  for (const p of LOCAL.table){ LOCAL.botHand.push(p.attack); if (p.defend) LOCAL.botHand.push(p.defend); }
-  LOCAL.table=[]; LOCAL.roundMax=null;
+let defendIdx = -1;
+if (sameSuitIdx !== -1) defendIdx = sameSuitIdx;
+else if (trumpIdx !== -1) defendIdx = trumpIdx;
+
+if (defendIdx === -1){
+  // can't defend -> take all
+  console.log('[bot defend] cannot defend — taking cards');
+  for (const p of LOCAL.table){
+    LOCAL.botHand.push(p.attack);
+    if (p.defend) LOCAL.botHand.push(p.defend);
+  }
+  LOCAL.table = [];
+  LOCAL.roundMax = null;
   refillLocal(true);
   showToast('Бот взял карты');
   return;
 } else {
-  // bot defends last pair
-  const c = LOCAL.botHand.splice(idx,1)[0];
-  last.defend = c;
-
+  // defend with selected card
+  const defendCard = LOCAL.botHand.splice(defendIdx,1)[0];
+  last.defend = defendCard;
+  console.log('[bot defend] defended with', defendCard);
   const all = LOCAL.table.every(p=>p.defend);
   if (all){
-    // CORRECTED BEHAVIOUR:
-    // bot defended all pairs — attacker gets the chance to add more cards or press "Бито".
-    // Do NOT call refill here; wait for attacker decision.
+    // CORRECT: attacker gets chance to add or press "Бито"
     showToast('Бот отбился');
     LOCAL.phase = 'attacking';
-    // attacker remains the same person who started the attack (LOCAL.attacker)
     LOCAL.currentPlayer = LOCAL.attacker;
-    // keep hands sorted
     sortHand(LOCAL.botHand, LOCAL.trumpSuit);
     sortHand(LOCAL.playerHand, LOCAL.trumpSuit);
     renderAllLocal();
-    // do NOT trigger botMoveLocal here — wait for human attacker action or 'Бито'
+    // DO NOT call refill — wait for attacker decision
     return;
   } else {
-    // still pairs un-defended -> bot may need to defend further (unlikely in simple flow)
+    // still not all defended -> set player's turn to defend more (unlikely)
     LOCAL.currentPlayer = 'player';
     sortHand(LOCAL.botHand, LOCAL.trumpSuit);
     renderAllLocal();
@@ -300,12 +301,14 @@ if (idx===-1){
 }
 ```
 
+} else {
+console.log('[botMoveLocal] unknown phase', LOCAL.phase);
 }
 }
 
 function getStatusLocal(){ if (LOCAL.phase==='attacking') return LOCAL.currentPlayer==='player'? '✅ Ваш ход. Атакуйте!' : '🤖 Бот атакует...'; if (LOCAL.phase==='defending') return LOCAL.currentPlayer==='player'? '🛡️ Ваш ход. Защищайтесь!' : '🤖 Бот защищается...'; return ''; }
 
-/* ---------- Multiplayer code unchanged (uses server roundMax) ---------- */
+/* ---------- Multiplayer unchanged ---------- */
 let MP = { gameId: null, playerId: null, poll: null, state: null };
 
 async function createRoom(){
