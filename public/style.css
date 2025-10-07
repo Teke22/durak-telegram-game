@@ -1,52 +1,82 @@
-/* Простые стили для читаемости */
+/* style.css — компактный стиль */
+:root {
+  --bg1: #5e7be6;
+  --bg2: #6f4bb8;
+  --accent: #007aff;
+  --muted: rgba(255,255,255,0.9);
+  --card-w: 50px;
+  --card-h: 70px;
+  --card-small-w: 42px;
+  --card-small-h: 60px;
+}
+
+*{box-sizing:border-box}
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial;
-  margin: 0; padding: 18px; min-height: 100vh;
-  background: linear-gradient(135deg,#5e7be6 0%,#6f4bb8 100%);
-  color: #222;
+  margin:0; padding:14px; min-height:100vh;
+  background: linear-gradient(135deg,var(--bg1) 0%, var(--bg2) 100%);
+  color:#222;
 }
-#app { max-width: 920px; margin: 0 auto; }
-h1 { color: #fff; text-align:center; margin-bottom:10px; text-shadow: 0 2px 6px rgba(0,0,0,0.25); }
+#app{ max-width:920px; margin:0 auto; }
+h1{ color:#fff; text-align:center; margin:6px 0 8px 0; font-size:20px; text-shadow:0 2px 6px rgba(0,0,0,0.25); }
 
-#seats { display:flex; gap:10px; justify-content:center; margin-bottom:10px; }
-.seat { background: rgba(255,255,255,0.95); padding:8px 10px; border-radius:8px; min-width:120px; text-align:center; font-weight:700; }
-.seat.you { border: 2px solid #007aff; box-shadow: 0 6px 12px rgba(0,122,255,0.12); }
+/* info row */
+#info-row{ display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.small-info{ background:rgba(255,255,255,0.9); padding:6px 8px; border-radius:8px; font-weight:700; font-size:13px; color:#222; }
 
-#game-board { margin-top:10px; }
+/* seats compact */
+.seats-compact{ display:flex; gap:8px; align-items:center; }
+.seat { background: rgba(255,255,255,0.95); padding:6px 8px; border-radius:8px; min-width:120px; text-align:center; font-weight:700; font-size:13px; }
+.seat.you { border: 2px solid var(--accent); box-shadow: 0 6px 12px rgba(0,122,255,0.12); }
 
+/* board/card sections */
+#game-board { margin-top:8px; }
 .table-section, .hand-section, .opponent-section {
-  background: rgba(255,255,255,0.95); border-radius:10px; padding:12px; margin:12px 0;
+  background: rgba(255,255,255,0.95); border-radius:10px; padding:10px; margin:8px 0;
 }
+.muted{ color: rgba(255,255,255,0.95); text-align:center; }
+
+/* cards rows */
 .table-cards, .player-cards, .opponent-cards {
-  display:flex; align-items:flex-end; gap:10px; justify-content:center; overflow:visible;
+  display:flex; align-items:flex-end; gap:8px; justify-content:center; overflow:visible;
 }
 
-/* Карта */
+/* Card */
 .card {
-  width:56px; height:78px; border-radius:8px; background:#fff; border:2px solid #ddd;
+  width:var(--card-w); height:var(--card-h); border-radius:8px; background:#fff; border:1.8px solid #ddd;
   display:flex; flex-direction:column; justify-content:space-between; align-items:center; padding:6px;
-  font-weight:800; font-size:16px; box-shadow: 0 6px 12px rgba(0,0,0,0.08);
-  user-select:none;
+  font-weight:800; font-size:15px; box-shadow: 0 6px 10px rgba(0,0,0,0.06);
+  user-select:none; transition: transform .12s ease;
 }
 .card .suit.red { color:#d43d3d; }
 .card .suit.black { color:#222; }
-.card.clickable { cursor:pointer; border-color:#007aff; }
-.card.clickable:hover { transform: translateY(-6px); box-shadow: 0 12px 22px rgba(0,0,0,0.12); }
+.card.clickable { cursor:pointer; border-color:var(--accent); }
+.card.clickable:hover { transform: translateY(-6px); box-shadow: 0 12px 20px rgba(0,0,0,0.12); }
 
-/* Рубашка соперника — веером (compact) */
-.opponent-cards { height:86px; position:relative; padding-left:8px; padding-right:8px; }
+/* smaller variant for opponent fan */
+.opponent-cards { height:80px; position:relative; padding-left:6px; padding-right:6px; }
 .opponent-cards .card.back {
-  width:44px; height:64px; border-radius:6px; background: repeating-linear-gradient(45deg,#cfd9ff 0,#cfd9ff 6px,#9fb1ff 6px,#9fb1ff 12px);
-  margin-left:-30px; border:2px solid rgba(60,100,200,0.6); display:flex; align-items:center; justify-content:center; font-weight:900;
+  width:var(--card-small-w); height:var(--card-small-h); border-radius:6px; background: repeating-linear-gradient(45deg,#cfd9ff 0,#cfd9ff 6px,#9fb1ff 6px,#9fb1ff 12px);
+  margin-left:-24px; border:1.8px solid rgba(60,100,200,0.6); display:flex; align-items:center; justify-content:center; font-weight:900;
 }
 .opponent-cards .card.back:first-child { margin-left:0; }
-.opponent-cards .card.back.more { background: rgba(255,255,255,0.88); border-style:dashed; color:#222; }
+.opponent-cards .card.back.more { background: rgba(255,255,255,0.9); border-style:dashed; color:#222; }
 
-/* Кнопки */
-button { padding:10px 14px; border-radius:8px; border:none; cursor:pointer; background:#007aff; color:#fff; font-weight:700; }
+/* action buttons / controls */
+.controls { display:flex; gap:8px; justify-content:center; margin-top:10px; }
+button { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; background:var(--accent); color:#fff; font-weight:700; font-size:14px; }
 button.secondary { background:#6c757d; }
-.action-buttons { display:flex; gap:8px; justify-content:center; margin-top:8px; }
 
-/* Тосты */
-#toast-container { position: fixed; left: 0; right: 0; bottom: 12px; display:flex; justify-content:center; pointer-events:none; }
-.toast { pointer-events:auto; background: rgba(0,0,0,0.8); color:#fff; padding:8px 12px; border-radius:8px; margin:6px; }
+/* compact hand */
+.player-cards .card { width: calc(var(--card-w) - 6px); height: calc(var(--card-h) - 6px); font-size:14px; }
+
+/* toasts */
+#toast-container { position: fixed; left:0; right:0; bottom:12px; display:flex; justify-content:center; pointer-events:none; z-index:9999; }
+.toast { pointer-events:auto; background: rgba(0,0,0,0.8); color:#fff; padding:8px 12px; border-radius:8px; margin:6px; font-weight:700; }
+
+/* small screens */
+@media (max-width:480px){
+  :root { --card-w:46px; --card-h:64px; --card-small-w:36px; --card-small-h:52px; }
+  .seat { min-width:92px; font-size:12px; padding:6px; }
+  h1{ font-size:18px; }
+}
