@@ -1,5 +1,4 @@
-// public/script.js
-// compact client — 2-player + local bot (logic preserved), plus assigned ID display
+// public/script.js — compact client with trump highlight, sorted hands and inline join UI
 
 const tg = window.Telegram?.WebApp ?? {
   expand() {},
@@ -10,6 +9,8 @@ const tg = window.Telegram?.WebApp ?? {
 try { tg.expand?.(); } catch(e){}
 
 const RANK_VALUES = { '6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13,'A':14 };
+const ORDERED_RANKS = ['6','7','8','9','10','J','Q','K','A'];
+const SUIT_ORDER = ['♣','♦','♥','♠']; // suit sorting order for non-trumps (you can change)
 const API = { create: '/api/create-game', join: (id) => `/api/join-game/${id}`, game: (id) => `/api/game/${id}`, move: (id) => `/api/game/${id}/move` };
 
 const el = {
@@ -19,17 +20,41 @@ const el = {
   startBtn: document.getElementById('start-game'),
   createBtn: document.getElementById('create-room'),
   joinBtn: document.getElementById('join-room'),
+  joinInput: document.getElementById('join-code-input'),
   toastContainer: document.getElementById('toast-container')
 };
 function showToast(text, ms=1400){ const t=document.createElement('div'); t.className='toast'; t.textContent=text; el.toastContainer.appendChild(t); setTimeout(()=>t.remove(), ms); }
 function setAssignedId(id){ if (!el.assigned) return; el.assigned.textContent = `ID: ${id || '—'}`; }
 
-// ---------- Local bot (unchanged core logic, compact UI hooks) ----------
-const LOCAL = { deck: [], playerHand: [], botHand: [], table: [], trumpSuit: null, trumpCard: null, attacker: 'player', defender: 'bot', currentPlayer: 'player', phase: 'attacking', status: 'idle', roundMax: null };
-const SUITS = ['♠','♥','♦','♣']; const RANKS = ['6','7','8','9','10','J','Q','K','A'];
+function rankIndex(r){ return ORDERED_RANKS.indexOf(r); }
+function suitIndex(s){ return SUIT_ORDER.indexOf(s); }
 
-function buildDeck(){ const d=[]; for (const s of SUITS) for (const r of RANKS) d.push({ rank:r, suit:s, value:RANK_VALUES[r] }); for (let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; } return d; }
-function sortHand(hand, trump){ if (!Array.isArray(hand)) return; hand.sort((a,b)=>{ const aT = a.suit === trump, bT = b.suit === trump; if (aT !== bT) return aT?1:-1; if (a.suit !== b.suit) return a.suit.localeCompare(b.suit); return a.value - b.value; }); }
+// Sort hand: non-trumps first sorted by suit (suit order) then rank asc, then trumps at end sorted by rank asc
+function sortHand(hand, trumpSuit){
+  hand.sort((a,b) => {
+    const aIsTrump = a.suit === trumpSuit;
+    const bIsTrump = b.suit === trumpSuit;
+    if (aIsTrump !== bIsTrump) return aIsTrump ? 1 : -1; // non-trumps first
+    if (!aIsTrump && !bIsTrump) {
+      // compare by suit order then rank
+      const su = suitIndex(a.suit) - suitIndex(b.suit);
+      if (su !== 0) return su;
+      return rankIndex(a.rank) - rankIndex(b.rank);
+    }
+    // both trumps: sort by rank
+    return rankIndex(a.rank) - rankIndex(b.rank);
+  });
+}
+
+/* ---------- Local bot (same logic, but uses new sortHand and trump highlight) ---------- */
+const LOCAL = { deck: [], playerHand: [], botHand: [], table: [], trumpSuit: null, trumpCard: null, attacker: 'player', defender: 'bot', currentPlayer: 'player', phase: 'attacking', status: 'idle', roundMax: null };
+const RANKS = ['6','7','8','9','10','J','Q','K','A'];
+const SUITS = ['♠','♥','♦','♣'];
+
+function buildDeck(){
+  const d=[]; for (const s of SUITS) for (const r of RANKS) d.push({ rank:r, suit:s, value:RANK_VALUES[r] });
+  for (let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; } return d;
+}
 
 function initLocalGame(){
   LOCAL.deck = buildDeck();
@@ -41,12 +66,13 @@ function initLocalGame(){
   renderAllLocal();
 }
 
+/* rendering with trump highlight */
 function renderAllLocal(){
   renderSeatsLocal();
   el.board.innerHTML='';
   const header=document.createElement('div');
   header.innerHTML = `<h2>Игра с ботом</h2>
-    <div class="table-section"><div>Козырь: <strong>${LOCAL.trumpSuit || '—'}</strong></div><div style="margin-top:6px;">В колоде: ${LOCAL.deck.length}</div></div>
+    <div class="table-section"><div>Козырь: <strong>${LOCAL.trumpSuit || '—'}</strong></div><div class="trump-card">${LOCAL.trumpCard ? (LOCAL.trumpCard.rank + LOCAL.trumpCard.suit) : ''}</div><div style="margin-top:6px;">В колоде: ${LOCAL.deck.length}</div></div>
     <div class="table-section"><div class="game-status">${getStatusLocal()}</div></div>`;
   el.board.appendChild(header);
   renderOpponentLocal();
@@ -57,26 +83,29 @@ function renderAllLocal(){
 function renderSeatsLocal(){ if (el.seats) el.seats.innerHTML = `<div class="seat you">You</div><div class="seat">Бот</div>`; }
 function renderOpponentLocal(){ const n=LOCAL.botHand.length; const sec=document.createElement('div'); sec.className='opponent-section'; sec.innerHTML=`<h3>Бот: ${n}</h3>`; const row=document.createElement('div'); row.className='opponent-cards'; for (let i=0;i<Math.min(12,n);i++){ const b=document.createElement('div'); b.className='card back'; row.appendChild(b); } if (n>12){ const more=document.createElement('div'); more.className='card back more'; more.textContent=`+${n-12}`; row.appendChild(more); } sec.appendChild(row); el.board.appendChild(sec); }
 function renderTableLocal(){ const sec=document.createElement('div'); sec.className='table-section'; sec.innerHTML='<h3>На столе:</h3>'; const row=document.createElement('div'); row.className='table-cards'; LOCAL.table.forEach(pair=>{ const wrap=document.createElement('div'); wrap.className='card-pair'; wrap.appendChild(cardNode(pair.attack,false)); if (pair.defend){ const d=cardNode(pair.defend,false); d.classList.add('defended'); wrap.appendChild(d); } row.appendChild(wrap); }); sec.appendChild(row); el.board.appendChild(sec); }
-function renderActionButtonsLocal(){ const actions=document.createElement('div'); actions.className='action-buttons'; const allDef = LOCAL.table.length>0 && LOCAL.table.every(p=>p.defend); if (LOCAL.phase==='defending' && LOCAL.currentPlayer==='player'){ const take=document.createElement('button'); take.className='secondary danger'; take.textContent='Взять'; take.onclick=takeCardsLocal; actions.appendChild(take); } if (allDef && LOCAL.currentPlayer==='player' && LOCAL.attacker==='player'){ const b=document.createElement('button'); b.className='secondary'; b.textContent='Бито'; b.onclick = ()=>{ passLocal(); }; actions.appendChild(b); } if (actions.children.length) el.board.appendChild(actions); }
-function renderPlayerHandLocal(){ const sec=document.createElement('div'); sec.className='hand-section'; sec.innerHTML='<h3>Ваши карты:</h3>'; const row=document.createElement('div'); row.className='player-cards'; LOCAL.playerHand.forEach((card,idx)=>{ const canAttack = LOCAL.phase==='attacking' && LOCAL.currentPlayer==='player' && LOCAL.attacker==='player'; const canDefend = LOCAL.phase==='defending' && LOCAL.currentPlayer==='player' && LOCAL.defender==='player'; const clickable = (canAttack && canAttackLocal(card)) || (canDefend && canDefendLocal(card)); const n=cardNode(card, clickable); if (clickable) n.addEventListener('click', ()=>{ if (canAttack && canAttackLocal(card)) attackLocal(idx); else if (canDefend && canDefendLocal(card)) defendLocal(idx); }); row.appendChild(n); }); sec.appendChild(row); el.board.appendChild(sec); }
+
+function renderActionButtonsLocal(){ const actions=document.createElement('div'); actions.className='action-buttons'; const allDef = LOCAL.table.length>0 && LOCAL.table.every(p=>p.defend); if (LOCAL.phase==='defending' && LOCAL.currentPlayer==='player'){ const take=document.createElement('button'); take.className='secondary danger'; take.textContent='Взять'; take.onclick=takeCardsLocal; actions.appendChild(take);} if (allDef && LOCAL.currentPlayer==='player' && LOCAL.attacker==='player'){ const b=document.createElement('button'); b.className='secondary'; b.textContent='Бито'; b.onclick=()=>{ passLocal(); }; actions.appendChild(b);} if (actions.children.length) el.board.appendChild(actions); }
+
+function renderPlayerHandLocal(){ const sec=document.createElement('div'); sec.className='hand-section'; sec.innerHTML='<h3>Ваши карты:</h3>'; const row=document.createElement('div'); row.className='player-cards'; LOCAL.playerHand.forEach((card,idx)=>{ const canAttack = LOCAL.phase==='attacking' && LOCAL.currentPlayer==='player' && LOCAL.attacker==='player'; const canDefend = LOCAL.phase==='defending' && LOCAL.currentPlayer==='player' && LOCAL.defender==='player'; const clickable = (canAttack && canAttackLocal(card)) || (canDefend && canDefendLocal(card)); const n=cardNode(card, clickable); if (card.suit === LOCAL.trumpSuit) n.classList.add('trump'); if (clickable) n.addEventListener('click', ()=>{ if (canAttack && canAttackLocal(card)) attackLocal(idx); else if (canDefend && canDefendLocal(card)) defendLocal(idx); }); row.appendChild(n); }); sec.appendChild(row); el.board.appendChild(sec); }
+
 function cardNode(card, clickable){ const d=document.createElement('div'); d.className='card' + (clickable? ' clickable':''); const suitClass=(card.suit==='♥'||card.suit==='♦')? 'suit red':'suit black'; d.innerHTML = `<div class="${suitClass}">${card.suit}</div><div style="font-size:16px">${card.rank}</div>`; return d; }
 
 function canAttackLocal(card){ if (LOCAL.table.length===0) return true; const ranks=new Set(); LOCAL.table.forEach(p=>{ ranks.add(p.attack.rank); if (p.defend) ranks.add(p.defend.rank); }); return ranks.has(card.rank) && LOCAL.table.length < (LOCAL.defender==='player'? LOCAL.playerHand.length : LOCAL.botHand.length); }
-function canDefendLocal(card){ if (LOCAL.table.length===0) return false; const last=LOCAL.table[LOCAL.table.length-1]; if (!last || last.defend) return false; if (card.suit === last.attack.suit && card.value > last.attack.value) return true; if (card.suit === LOCAL.trumpSuit && last.attack.suit !== LOCAL.trumpSuit) return true; return false; }
+function canDefendLocal(card){ if (LOCAL.table.length===0) return false; const last = LOCAL.table[LOCAL.table.length-1]; if (!last || last.defend) return false; if (card.suit === last.attack.suit && card.value > last.attack.value) return true; if (card.suit === LOCAL.trumpSuit && last.attack.suit !== LOCAL.trumpSuit) return true; return false; }
 
-function attackLocal(index){ const played = LOCAL.playerHand.splice(index,1)[0]; LOCAL.table.push({ attack: played, defend: null }); if (!LOCAL.roundMax) LOCAL.roundMax = 6; LOCAL.phase='defending'; LOCAL.currentPlayer='bot'; renderAllLocal(); setTimeout(botMoveLocal, 500); }
-function defendLocal(index){ const last = LOCAL.table[LOCAL.table.length-1]; if (!last || last.defend) return; const played = LOCAL.playerHand.splice(index,1)[0]; last.defend = played; const allDef = LOCAL.table.every(p=>p.defend); if (allDef){ LOCAL.phase='attacking'; LOCAL.currentPlayer = LOCAL.attacker; renderAllLocal(); } else { LOCAL.currentPlayer='bot'; renderAllLocal(); setTimeout(botMoveLocal, 400); } }
+function attackLocal(index){ const played = LOCAL.playerHand.splice(index,1)[0]; LOCAL.table.push({ attack: played, defend: null }); if (!LOCAL.roundMax) LOCAL.roundMax = 6; LOCAL.phase='defending'; LOCAL.currentPlayer='bot'; sortHand(LOCAL.playerHand, LOCAL.trumpSuit); renderAllLocal(); setTimeout(botMoveLocal, 500); }
+function defendLocal(index){ const last = LOCAL.table[LOCAL.table.length-1]; if (!last || last.defend) return; const played = LOCAL.playerHand.splice(index,1)[0]; last.defend = played; const allDef = LOCAL.table.every(p=>p.defend); if (allDef){ LOCAL.phase='attacking'; LOCAL.currentPlayer = LOCAL.attacker; sortHand(LOCAL.playerHand, LOCAL.trumpSuit); renderAllLocal(); } else { LOCAL.currentPlayer='bot'; sortHand(LOCAL.playerHand, LOCAL.trumpSuit); renderAllLocal(); setTimeout(botMoveLocal, 400); } }
 
 function takeCardsLocal(){ for (const p of LOCAL.table){ LOCAL.playerHand.push(p.attack); if (p.defend) LOCAL.playerHand.push(p.defend); } LOCAL.table=[]; LOCAL.roundMax=null; refillLocal(true); showToast('Вы взяли карты'); }
 function passLocal(){ LOCAL.table=[]; LOCAL.roundMax=null; refillLocal(false); showToast('Бито'); }
 
-function refillLocal(defenderTook){ const drawOne=(hand)=>{ if (LOCAL.deck.length) hand.push(LOCAL.deck.pop()); }; const attHand = (LOCAL.attacker==='player')?LOCAL.playerHand:LOCAL.botHand; const defHand = (LOCAL.defender==='player')?LOCAL.playerHand:LOCAL.botHand; while ((attHand.length<6 || defHand.length<6) && LOCAL.deck.length){ if (attHand.length<6) drawOne(attHand); if (defHand.length<6) drawOne(defHand); } if (!defenderTook){ const prev = LOCAL.attacker; LOCAL.attacker = LOCAL.defender; LOCAL.defender = prev; } LOCAL.phase='attacking'; LOCAL.currentPlayer=LOCAL.attacker; LOCAL.roundMax=null; sortHand(LOCAL.playerHand, LOCAL.trumpSuit); sortHand(LOCAL.botHand, LOCAL.trumpSuit); renderAllLocal(); if (LOCAL.currentPlayer==='bot') setTimeout(botMoveLocal, 400); }
+function refillLocal(defenderTook){ const drawOne=(hand)=>{ if (LOCAL.deck.length) hand.push(LOCAL.deck.pop()); }; const attHand = (LOCAL.attacker==='player')?LOCAL.playerHand:LOCAL.botHand; const defHand = (LOCAL.defender==='player')?LOCAL.playerHand:LOCAL.botHand; while ((attHand.length<6 || defHand.length<6) && LOCAL.deck.length){ if (attHand.length<6) drawOne(attHand); if (defHand.length<6) drawOne(defHand); } if (!defenderTook){ const prev = LOCAL.attacker; LOCAL.attacker = LOCAL.defender; LOCAL.defender = prev; } LOCAL.phase='attacking'; LOCAL.currentPlayer=LOCAL.attacker; LOCAL.roundMax=null; sortHand(LOCAL.playerHand, LOCAL.trumpSuit); sortHand(LOCAL.botHand, LOCAL.trumpSuit); renderAllLocal(); if (LOCAL.currentPlayer==='bot') setTimeout(botMoveLocal,400); }
 
-function botMoveLocal(){ if (LOCAL.phase==='attacking'){ if (LOCAL.table.length===0){ if (LOCAL.botHand.length===0){ passLocal(); return; } let best=0, bVal=Infinity; for (let i=0;i<LOCAL.botHand.length;i++){ const c=LOCAL.botHand[i]; const v=(c.suit===LOCAL.trumpSuit?100+c.value:c.value); if (v<bVal){bVal=v;best=i;} } const card = LOCAL.botHand.splice(best,1)[0]; LOCAL.table.push({ attack: card, defend: null }); LOCAL.phase='defending'; LOCAL.currentPlayer='player'; showToast('Бот атакует'); renderAllLocal(); return; } else { const ranks=new Set(); LOCAL.table.forEach(p=>{ ranks.add(p.attack.rank); if (p.defend) ranks.add(p.defend.rank); }); if (LOCAL.table.length < (LOCAL.defender==='player'?LOCAL.playerHand.length:LOCAL.botHand.length)){ for (let i=0;i<LOCAL.botHand.length;i++){ if (ranks.has(LOCAL.botHand[i].rank)){ const card = LOCAL.botHand.splice(i,1)[0]; LOCAL.table.push({ attack: card, defend: null }); LOCAL.phase='defending'; LOCAL.currentPlayer='player'; renderAllLocal(); return; } } } passLocal(); return; } } else if (LOCAL.phase==='defending'){ const last = LOCAL.table[LOCAL.table.length-1]; if (!last || last.defend){ LOCAL.phase='attacking'; LOCAL.currentPlayer = LOCAL.attacker; renderAllLocal(); return; } let idx=-1; for (let i=0;i<LOCAL.botHand.length;i++){ const c=LOCAL.botHand[i]; if (c.suit===last.attack.suit && c.value>last.attack.value){ idx=i; break; } if (c.suit===LOCAL.trumpSuit && last.attack.suit!==LOCAL.trumpSuit){ idx=i; break; } } if (idx===-1){ for (const p of LOCAL.table){ LOCAL.botHand.push(p.attack); if (p.defend) LOCAL.botHand.push(p.defend); } LOCAL.table=[]; LOCAL.roundMax=null; refillLocal(true); showToast('Бот взял карты'); return; } else { const c = LOCAL.botHand.splice(idx,1)[0]; last.defend = c; const all = LOCAL.table.every(p=>p.defend); if (all){ showToast('Бот отбился'); refillLocal(false); } else { LOCAL.phase='attacking'; LOCAL.currentPlayer = LOCAL.attacker; renderAllLocal(); } return; } } }
+function botMoveLocal(){ if (LOCAL.phase==='attacking'){ if (LOCAL.table.length===0){ if (LOCAL.botHand.length===0){ passLocal(); return; } let best=0, bVal=Infinity; for (let i=0;i<LOCAL.botHand.length;i++){ const c=LOCAL.botHand[i]; const v=(c.suit===LOCAL.trumpSuit?100+c.value:c.value); if (v<bVal){bVal=v;best=i;} } const card = LOCAL.botHand.splice(best,1)[0]; LOCAL.table.push({ attack: card, defend: null }); LOCAL.phase='defending'; LOCAL.currentPlayer='player'; showToast('Бот атакует'); sortHand(LOCAL.botHand, LOCAL.trumpSuit); renderAllLocal(); return; } else { const ranks=new Set(); LOCAL.table.forEach(p=>{ ranks.add(p.attack.rank); if (p.defend) ranks.add(p.defend.rank); }); if (LOCAL.table.length < (LOCAL.defender==='player'?LOCAL.playerHand.length:LOCAL.botHand.length)){ for (let i=0;i<LOCAL.botHand.length;i++){ if (ranks.has(LOCAL.botHand[i].rank)){ const card=LOCAL.botHand.splice(i,1)[0]; LOCAL.table.push({ attack: card, defend: null }); LOCAL.phase='defending'; LOCAL.currentPlayer='player'; sortHand(LOCAL.botHand, LOCAL.trumpSuit); renderAllLocal(); return; } } } passLocal(); return; } } else if (LOCAL.phase==='defending'){ const last = LOCAL.table[LOCAL.table.length-1]; if (!last || last.defend){ LOCAL.phase='attacking'; LOCAL.currentPlayer = LOCAL.attacker; renderAllLocal(); return; } let idx=-1; for (let i=0;i<LOCAL.botHand.length;i++){ const c=LOCAL.botHand[i]; if (c.suit===last.attack.suit && c.value>last.attack.value){ idx=i; break; } if (c.suit===LOCAL.trumpSuit && last.attack.suit!==LOCAL.trumpSuit){ idx=i; break; } } if (idx===-1){ for (const p of LOCAL.table){ LOCAL.botHand.push(p.attack); if (p.defend) LOCAL.botHand.push(p.defend); } LOCAL.table=[]; LOCAL.roundMax=null; refillLocal(true); showToast('Бот взял карты'); return; } else { const c=LOCAL.botHand.splice(idx,1)[0]; last.defend = c; const all = LOCAL.table.every(p=>p.defend); if (all){ showToast('Бот отбился'); refillLocal(false); } else { LOCAL.phase='attacking'; LOCAL.currentPlayer = LOCAL.attacker; sortHand(LOCAL.botHand, LOCAL.trumpSuit); renderAllLocal(); } return; } } }
 
 function getStatusLocal(){ if (LOCAL.phase==='attacking') return LOCAL.currentPlayer==='player'? '✅ Ваш ход. Атакуйте!' : '🤖 Бот атакует...'; if (LOCAL.phase==='defending') return LOCAL.currentPlayer==='player'? '🛡️ Ваш ход. Защищайтесь!' : '🤖 Бот защищается...'; return ''; }
 
-// ---------- Multiplayer (2 players) ----------
+/* ---------- Multiplayer (2 players) ---------- */
 let MP = { gameId: null, playerId: null, poll: null, state: null };
 
 async function createRoom(){
@@ -91,9 +120,12 @@ async function createRoom(){
   } catch (e) { console.error(e); showToast('Не удалось создать комнату'); }
 }
 
+// now join uses inline input instead of prompt
 async function joinRoomPrompt(){
-  const code = (prompt('Введите код комнаты (6 символов)')||'').toUpperCase().trim();
-  if (!code || code.length !== 6) return showToast('Некорректный код');
+  const codeEl = el.joinInput;
+  if (!codeEl) return showToast('Поле ввода не найдено');
+  const code = (codeEl.value || '').toUpperCase().trim();
+  if (!code || code.length !== 6) return showToast('Введите корректный 6-значный код');
   try {
     const resp = await fetch(API.join(code), { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ playerId: tg.initDataUnsafe.user?.id || `player_${Date.now()}` }) });
     if (!resp.ok){ const t = await resp.text(); throw new Error(t); }
@@ -155,8 +187,8 @@ function renderMPFromState(s){
     const tro = document.createElement('div'); tro.className='table-cards';
     s.table.forEach(pair => {
       const wrap = document.createElement('div'); wrap.className='card-pair';
-      wrap.appendChild(cardNodeFromObj(pair.attack, false));
-      if (pair.defend){ const d = cardNodeFromObj(pair.defend, false); d.classList.add('defended'); wrap.appendChild(d); }
+      wrap.appendChild(cardNodeFromObj(pair.attack, false, s.trumpSuit));
+      if (pair.defend){ const d = cardNodeFromObj(pair.defend, false, s.trumpSuit); d.classList.add('defended'); wrap.appendChild(d); }
       tro.appendChild(wrap);
     });
     tsec.appendChild(tro); el.board.appendChild(tsec);
@@ -167,7 +199,6 @@ function renderMPFromState(s){
   renderMPActionButtons(s);
   renderMPPlayerHand(s, hand);
 
-  // update assigned-id visually if server changed it
   if (s.you) setAssignedId(s.you);
 }
 
@@ -183,6 +214,8 @@ function renderMPActionButtons(s){
 }
 
 function renderMPPlayerHand(s, hand){
+  // sort client's hand locally using server trump
+  if (s.trumpSuit) sortHand(hand, s.trumpSuit);
   const sec = document.createElement('div'); sec.className='hand-section'; sec.innerHTML = '<h3>Ваши карты:</h3>';
   const row = document.createElement('div'); row.className='player-cards';
   const you = s.you; const isAtt = s.attacker === you; const isDef = s.defender === you; const isCur = s.currentPlayer === you;
@@ -192,7 +225,7 @@ function renderMPPlayerHand(s, hand){
     const canDefend = (s.phase === 'defending' && isCur && isDef);
     const canAdd = (s.phase === 'defending' && !isDef && isCur && isAtt);
     const clickable = (canAttack && canAttackWithMP(card, s, defenderHandCount())) || (canDefend && canDefendWithMP(card, s)) || (canAdd && canAddWithMP(card, s, defenderHandCount()));
-    const node = cardNodeFromObj(card, clickable);
+    const node = cardNodeFromObj(card, clickable, s.trumpSuit);
     if (clickable){
       node.addEventListener('click', ()=>{
         if (canDefend && canDefendWithMP(card, s)) sendMoveMP('defend', { rank: card.rank, suit: card.suit });
@@ -228,8 +261,9 @@ function canAddWithMP(card, s, defenderHandCount){
   return rset.has(card.rank);
 }
 
-function cardNodeFromObj(card, clickable){
+function cardNodeFromObj(card, clickable, trumpSuit){
   const d = document.createElement('div'); d.className = 'card' + (clickable ? ' clickable' : '');
+  if (card.suit === trumpSuit) d.classList.add('trump');
   const suitClass = (card.suit === '♥' || card.suit === '♦') ? 'suit red' : 'suit black';
   d.innerHTML = `<div class="${suitClass}">${card.suit}</div><div style="font-size:16px">${card.rank}</div>`;
   return d;
@@ -248,12 +282,12 @@ async function sendMoveMP(action, card){
   } catch (e) { showToast('Ошибка сети'); }
 }
 
-// UI hookup
+/* UI hookup */
 el.startBtn && el.startBtn.addEventListener('click', ()=> initLocalGame());
 el.createBtn && el.createBtn.addEventListener('click', ()=> createRoom());
 el.joinBtn && el.joinBtn.addEventListener('click', ()=> joinRoomPrompt());
 
-// auto-join from URL
+// auto-join from URL ?mode=join&gameId=XXXX
 (function autoJoin(){
   const p = new URLSearchParams(location.search);
   if (p.get('mode') === 'join' && p.get('gameId')){

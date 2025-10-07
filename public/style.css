@@ -1,4 +1,4 @@
-/* style.css — компактный стиль */
+/* style.css — компактный стиль + визуал для козырей */
 :root {
   --bg1: #5e7be6;
   --bg2: #6f4bb8;
@@ -8,6 +8,8 @@
   --card-h: 70px;
   --card-small-w: 42px;
   --card-small-h: 60px;
+  --trump-glow: 0 8px 20px rgba(255,180,60,0.25);
+  --trump-border: #ffb84d;
 }
 
 *{box-sizing:border-box}
@@ -22,7 +24,7 @@ h1{ color:#fff; text-align:center; margin:6px 0 8px 0; font-size:20px; text-shad
 
 /* info row */
 #info-row{ display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom:6px; }
-.small-info{ background:rgba(255,255,255,0.9); padding:6px 8px; border-radius:8px; font-weight:700; font-size:13px; color:#222; }
+.small-info{ background:rgba(255,255,255,0.95); padding:6px 8px; border-radius:8px; font-weight:700; font-size:13px; color:#222; }
 
 /* seats compact */
 .seats-compact{ display:flex; gap:8px; align-items:center; }
@@ -46,12 +48,18 @@ h1{ color:#fff; text-align:center; margin:6px 0 8px 0; font-size:20px; text-shad
   width:var(--card-w); height:var(--card-h); border-radius:8px; background:#fff; border:1.8px solid #ddd;
   display:flex; flex-direction:column; justify-content:space-between; align-items:center; padding:6px;
   font-weight:800; font-size:15px; box-shadow: 0 6px 10px rgba(0,0,0,0.06);
-  user-select:none; transition: transform .12s ease;
+  user-select:none; transition: transform .12s ease, box-shadow .15s ease, border-color .12s ease;
 }
 .card .suit.red { color:#d43d3d; }
 .card .suit.black { color:#222; }
 .card.clickable { cursor:pointer; border-color:var(--accent); }
 .card.clickable:hover { transform: translateY(-6px); box-shadow: 0 12px 20px rgba(0,0,0,0.12); }
+
+/* TRUMP visual: highlight and glow */
+.card.trump {
+  border-color: var(--trump-border);
+  box-shadow: var(--trump-glow);
+}
 
 /* smaller variant for opponent fan */
 .opponent-cards { height:80px; position:relative; padding-left:6px; padding-right:6px; }
@@ -63,12 +71,18 @@ h1{ color:#fff; text-align:center; margin:6px 0 8px 0; font-size:20px; text-shad
 .opponent-cards .card.back.more { background: rgba(255,255,255,0.9); border-style:dashed; color:#222; }
 
 /* action buttons / controls */
-.controls { display:flex; gap:8px; justify-content:center; margin-top:10px; }
+.controls { display:flex; gap:8px; justify-content:center; margin-top:10px; align-items:center; }
 button { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; background:var(--accent); color:#fff; font-weight:700; font-size:14px; }
 button.secondary { background:#6c757d; }
 
 /* compact hand */
 .player-cards .card { width: calc(var(--card-w) - 6px); height: calc(var(--card-h) - 6px); font-size:14px; }
+
+/* join-inline */
+.join-inline { display:flex; gap:8px; align-items:center; }
+#join-code-input {
+  width:120px; padding:8px; border-radius:8px; border:1px solid #ddd; text-align:center; text-transform:uppercase; font-weight:700;
+}
 
 /* toasts */
 #toast-container { position: fixed; left:0; right:0; bottom:12px; display:flex; justify-content:center; pointer-events:none; z-index:9999; }
@@ -79,4 +93,5 @@ button.secondary { background:#6c757d; }
   :root { --card-w:46px; --card-h:64px; --card-small-w:36px; --card-small-h:52px; }
   .seat { min-width:92px; font-size:12px; padding:6px; }
   h1{ font-size:18px; }
+  #join-code-input { width:92px; }
 }

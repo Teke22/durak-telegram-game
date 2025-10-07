@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Подкидной дурак — Мини-приложение</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <div id="app">
@@ -23,12 +23,17 @@
     <div class="controls">
       <button id="start-game">Начать игру с ботом</button>
       <button id="create-room" class="secondary">Создать комнату</button>
-      <button id="join-room" class="secondary">Присоединиться</button>
+
+      <!-- Удобный инлайновый ввод кода комнаты -->
+      <div id="join-inline" class="join-inline">
+        <input id="join-code-input" type="text" maxlength="6" placeholder="Код комнаты" />
+        <button id="join-room" class="secondary">Присоединиться</button>
+      </div>
     </div>
 
     <div id="toast-container" aria-live="polite"></div>
   </div>
 
-  <script src="script.js"></script>
+  <script src="script.js?v=6"></script>
 </body>
 </html>
