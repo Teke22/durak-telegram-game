@@ -1,122 +1,52 @@
-/* Базовые стили */
+/* Простые стили для читаемости */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  margin: 0;
-  padding: 18px;
-  min-height: 100vh;
-  background: linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial;
+  margin: 0; padding: 18px; min-height: 100vh;
+  background: linear-gradient(135deg,#5e7be6 0%,#6f4bb8 100%);
   color: #222;
 }
-#app { max-width: 980px; margin: 0 auto; }
+#app { max-width: 920px; margin: 0 auto; }
+h1 { color: #fff; text-align:center; margin-bottom:10px; text-shadow: 0 2px 6px rgba(0,0,0,0.25); }
 
-/* Заголовки */
-h1, h2 { color: #fff; text-align:center; margin: 0 0 12px; text-shadow: 0 2px 6px rgba(0,0,0,0.25); }
+#seats { display:flex; gap:10px; justify-content:center; margin-bottom:10px; }
+.seat { background: rgba(255,255,255,0.95); padding:8px 10px; border-radius:8px; min-width:120px; text-align:center; font-weight:700; }
+.seat.you { border: 2px solid #007aff; box-shadow: 0 6px 12px rgba(0,122,255,0.12); }
 
-/* Список мест */
-#seats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px,1fr));
-  gap: 8px;
-  margin: 8px 0 12px;
+#game-board { margin-top:10px; }
+
+.table-section, .hand-section, .opponent-section {
+  background: rgba(255,255,255,0.95); border-radius:10px; padding:12px; margin:12px 0;
 }
-.seat {
-  background: rgba(255,255,255,0.92);
-  border-radius: 10px;
-  padding: 8px;
-  display:flex; align-items:center; gap:8px;
-  border: 2px solid rgba(0,0,0,0.06);
+.table-cards, .player-cards, .opponent-cards {
+  display:flex; align-items:flex-end; gap:10px; justify-content:center; overflow:visible;
 }
-.seat.you { border-color:#007aff; box-shadow: 0 6px 14px rgba(0,122,255,0.12); }
-.seat.attacker { border-color:#ff9800; }
-.seat.defender { border-color:#4caf50; }
-.seat .avatar { width:36px;height:36px;border-radius:50%; display:flex;align-items:center;justify-content:center;font-weight:700;background:linear-gradient(135deg,#cfd9ff,#a1c4fd); color:#1a1a1a; }
-.seat .meta { font-size:13px; color:#1d2b3a; }
-.badge { font-size:11px; padding:3px 6px; border-radius:999px; color:#fff; margin-left:auto; font-weight:700; }
-.badge.a { background:#ff9800; } .badge.d { background:#4caf50; } .badge.you { background:#007aff; }
 
-/* Панель информации / козырь */
-.trump-info {
-  background: rgba(255,255,255,0.95);
-  border-radius: 10px;
-  padding: 12px;
-  margin: 12px 0;
-  text-align:center;
-}
-.trump-card { font-weight:800; font-size:20px; margin-top:6px; display:inline-block; }
-
-/* Поле и руки */
-.table-section, .hand-section, .opponent-section { background: rgba(255,255,255,0.95); border-radius:10px; padding: 12px; margin: 10px 0; }
-.table-cards, .player-cards, .opponent-cards { display:flex; align-items:flex-end; gap:10px; justify-content:center; flex-wrap:nowrap; overflow:visible; }
-
-/* Карты */
+/* Карта */
 .card {
-  background: #fff;
-  border: 3px solid #ddd;
-  border-radius: 10px;
-  width: 54px;
-  height: 74px;
-  padding: 8px 6px;
-  box-sizing: border-box;
-  text-align:center;
-  font-weight:700;
-  font-size:16px;
-  display:flex;
-  flex-direction:column;
-  justify-content:space-between;
-  box-shadow: 0 6px 12px rgba(0,0,0,0.08);
-  transition: transform .12s ease, box-shadow .12s ease;
-  user-select: none;
+  width:56px; height:78px; border-radius:8px; background:#fff; border:2px solid #ddd;
+  display:flex; flex-direction:column; justify-content:space-between; align-items:center; padding:6px;
+  font-weight:800; font-size:16px; box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+  user-select:none;
 }
-.card .suit.red { color: #d43d3d; }
-.card .suit.black { color: #222; }
-.card.clickable { cursor: pointer; border-color:#007aff; }
-.card.clickable:hover { transform: translateY(-6px); box-shadow: 0 12px 22px rgba(0,0,0,0.14); }
-.card.trump { border-color:#ff4444; }
+.card .suit.red { color:#d43d3d; }
+.card .suit.black { color:#222; }
+.card.clickable { cursor:pointer; border-color:#007aff; }
+.card.clickable:hover { transform: translateY(-6px); box-shadow: 0 12px 22px rgba(0,0,0,0.12); }
 
-/* Карточная "рубашка" (оппонент) */
-.card.back {
-  width: 46px;
-  height: 66px;
-  border-radius: 8px;
-  padding: 0;
-  background: repeating-linear-gradient(45deg,#bcd1ff 0,#bcd1ff 6px,#7fa2ff 6px,#7fa2ff 12px);
-  border: 2px solid rgba(40,80,200,0.7);
-  box-shadow: 0 8px 18px rgba(0,0,0,0.12);
-}
-
-/* Compact fan для оппонента:
-   - положим карточки в ряд с отрицательным отступом, чтобы они накладывались,
-   - но ограничим общую ширину */
-.opponent-cards {
-  justify-content: center;
-  position: relative;
-  height: 78px; /* reserve place for fan */
-  padding-left: 18px; padding-right: 18px;
-}
+/* Рубашка соперника — веером (compact) */
+.opponent-cards { height:86px; position:relative; padding-left:8px; padding-right:8px; }
 .opponent-cards .card.back {
-  position: relative;
-  margin-left: -30px;
-  transform-origin: bottom left;
-  transition: transform .12s ease;
+  width:44px; height:64px; border-radius:6px; background: repeating-linear-gradient(45deg,#cfd9ff 0,#cfd9ff 6px,#9fb1ff 6px,#9fb1ff 12px);
+  margin-left:-30px; border:2px solid rgba(60,100,200,0.6); display:flex; align-items:center; justify-content:center; font-weight:900;
 }
-.opponent-cards .card.back:first-child { margin-left: 0; }
+.opponent-cards .card.back:first-child { margin-left:0; }
+.opponent-cards .card.back.more { background: rgba(255,255,255,0.88); border-style:dashed; color:#222; }
 
-/* Если много карт — покажем "+N" элемент */
-.card.back.more {
-  display:flex; align-items:center; justify-content:center;
-  font-weight:800; color:#1a1a1a; background: rgba(255,255,255,0.1); border-style:dashed;
-}
-
-/* Статус/кнопки */
-.game-status { padding:10px; border-radius:8px; font-weight:700; margin-bottom:10px; text-align:center; background: rgba(255,255,255,0.95); }
-.action-buttons { display:flex; gap:10px; justify-content:center; margin: 12px 0; }
-.action-buttons button { padding:10px 14px; border-radius:8px; border:none; font-weight:700; cursor:pointer; background:#007aff; color:#fff; }
-.action-buttons .danger { background:#dc3545; } .action-buttons .success { background:#28a745; }
+/* Кнопки */
+button { padding:10px 14px; border-radius:8px; border:none; cursor:pointer; background:#007aff; color:#fff; font-weight:700; }
+button.secondary { background:#6c757d; }
+.action-buttons { display:flex; gap:8px; justify-content:center; margin-top:8px; }
 
 /* Тосты */
-#toast-container { position: fixed; left: 0; right: 0; bottom: 14px; display:flex; flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
-.toast { pointer-events:auto; background: rgba(0,0,0,0.8); color:white; padding:8px 12px; border-radius:8px; opacity:0; transform: translateY(10px); transition: all .18s ease; }
-.toast.show { opacity:1; transform: translateY(0); }
-
-/* маленькая анимация для загрузки */
-@keyframes spin { 0%{ transform:rotate(0) } 100%{ transform:rotate(360deg) } }
+#toast-container { position: fixed; left: 0; right: 0; bottom: 12px; display:flex; justify-content:center; pointer-events:none; }
+.toast { pointer-events:auto; background: rgba(0,0,0,0.8); color:#fff; padding:8px 12px; border-radius:8px; margin:6px; }
