@@ -1,31 +1,27 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Подкидной дурак — 2 игрока</title>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Подкидной дурак | Мини-приложение</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=1">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <div id="app">
-    <h1>🎴 Подкидной дурак (2 игрока)</h1>
-
-    <div id="seats"></div>
-
+    <h1>🎴 Подкидной дурак</h1>
     <div id="game-board">
-      <p>Нажмите «Начать игру» для игры с ботом или создайте/присоединитесь к комнате.</p>
+      <p>Нажмите "Начать игру" чтобы сыграть против бота!</p>
     </div>
-
-    <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
-      <button id="start-game">Начать игру с ботом</button>
-      <button id="create-room">Создать комнату</button>
-      <button id="join-room">Присоединиться</button>
-    </div>
-
-    <div id="toast-container" aria-live="polite"></div>
+    <button id="start-game">Начать игру</button>
   </div>
 
-  <script src="script.js?v=1"></script>
+  <!-- Toast контейнер -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="script.js?v=7"></script>
 </body>
 </html>
