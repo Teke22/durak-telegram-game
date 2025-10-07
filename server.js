@@ -48,6 +48,7 @@ function initBot() {
   const usePolling = process.env.NODE_ENV === 'development' && !process.env.RENDER_EXTERNAL_URL;
   bot = new TelegramBot(token, { polling: usePolling });
   if (!usePolling) setupWebhook().catch(console.error);
+
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const keyboard = {
@@ -132,16 +133,14 @@ function checkGameOver(session) {
   const deckEmpty = session.deck.length === 0;
   const aEmpty = session.hands[session.attacker].length === 0;
   const dEmpty = session.hands[session.defender].length === 0;
-
   if (!deckEmpty) return null;
-
-  // Если оба пустые — ничья (редко в классике, но ок)
   if (aEmpty && dEmpty) return { winner: 'draw' };
   if (aEmpty) return { winnerId: session.attacker };
   if (dEmpty) return { winnerId: session.defender };
   return null;
 }
 function startGame(session) {
+  console.log(`▶️  startGame for ${session.id}, players:`, session.players);
   session.deck = makeDeck();
   session.trumpCard = session.deck[session.deck.length - 1];
   session.trumpSuit = session.trumpCard.suit;
@@ -153,19 +152,19 @@ function startGame(session) {
   sortHand(session.hands[p1], session.trumpSuit);
   sortHand(session.hands[p2], session.trumpSuit);
 
-  // Кто атакует первым — простое правило: случайно
   const attacker = Math.random() < 0.5 ? p1 : p2;
   const defender = attacker === p1 ? p2 : p1;
 
   session.attacker = attacker;
   session.defender = defender;
   session.currentPlayer = attacker;
-  session.phase = 'attacking'; // 'attacking' | 'defending'
+  session.phase = 'attacking';
   session.table = [];
   session.status = 'playing';
   session.updated = Date.now();
   session.winnerId = null;
   session.winner = null;
+  console.log(`🎲 Game ${session.id} started. Trump: ${session.trumpSuit}. Attacker: ${attacker}`);
 }
 
 /* -------------------- API -------------------- */
@@ -174,6 +173,7 @@ function startGame(session) {
 app.post('/api/create-game', (req, res) => {
   const gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
   const playerId = String(req.body.playerId || `player_${Date.now()}`);
+  console.log(`📦 create-game ${gameId} by ${playerId}`);
 
   gameSessions.set(gameId, {
     id: gameId,
@@ -182,7 +182,6 @@ app.post('/api/create-game', (req, res) => {
     created: Date.now(),
     updated: Date.now(),
 
-    // Инициализация будущего состояния
     deck: [],
     trumpSuit: '',
     trumpCard: null,
@@ -192,39 +191,55 @@ app.post('/api/create-game', (req, res) => {
     defender: null,
     currentPlayer: null,
     phase: null,
+    winnerId: null,
+    winner: null,
   });
 
   res.json({ gameId, playerId, status: 'waiting' });
 });
 
-// Присоединиться ко второй слот
+// Присоединиться
 app.post('/api/join-game/:gameId', (req, res) => {
   const gameId = req.params.gameId;
-  const playerId = String(req.body.playerId || `player_${Date.now()}`);
+  const rawId = String(req.body.playerId || `player_${Date.now()}`);
   const session = gameSessions.get(gameId);
 
   if (!session) return res.status(404).json({ error: 'Game not found' });
   if (session.players.length >= 2) return res.status(400).json({ error: 'Game is full' });
 
-  // запрет повторного входа тем же игроком
-  if (!session.players.includes(playerId)) session.players.push(playerId);
+  // Если такой id уже есть — делаем уникальный суффикс
+  let effectiveId = rawId;
+  if (session.players.includes(rawId)) {
+    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+    effectiveId = `${rawId}_${suffix}`;
+    console.log(`⚠️  join ${gameId}: duplicate id "${rawId}", using "${effectiveId}"`);
+  }
+
+  session.players.push(effectiveId);
   session.status = 'ready';
   session.updated = Date.now();
 
-  // Как только 2 игрока — стартуем
+  // как только двое — стартуем
   if (session.players.length === 2) {
     startGame(session);
   }
 
-  res.json({ gameId, playerId, status: 'joined' });
+  console.log(`👥 join-game ${gameId}: players now ${session.players}`);
+  res.json({ gameId, playerId: effectiveId, status: 'joined' });
 });
 
-// Отдать состояние игры (с обезличиванием чужой руки)
+// Состояние игры (и автозапуск, если 2 игрока, а статус ещё не playing)
 app.get('/api/game/:gameId', (req, res) => {
   const gameId = req.params.gameId;
   const playerId = String(req.query.playerId || '');
   const session = gameSessions.get(gameId);
   if (!session) return res.status(404).json({ error: 'Game not found' });
+
+  // Авто-старт на чтении, если нужно
+  if (session.players.length === 2 && session.status !== 'playing' && !session.winnerId && !session.winner) {
+    console.log(`⏩ auto-start on GET for ${gameId}`);
+    startGame(session);
+  }
 
   const you = playerId && session.players.includes(playerId) ? playerId : null;
   const opp = you ? session.players.find((p) => p !== you) : null;
@@ -247,7 +262,6 @@ app.get('/api/game/:gameId', (req, res) => {
   };
 
   if (!you) {
-    // Не знаем кто запрашивает — отдаём минимум
     return res.json({ ...base, note: 'anonymous viewer' });
   }
 
@@ -263,7 +277,7 @@ app.get('/api/game/:gameId', (req, res) => {
   });
 });
 
-// Принять ход
+// Ход
 app.post('/api/game/:gameId/move', (req, res) => {
   const gameId = req.params.gameId;
   const { playerId, action, card } = req.body || {};
@@ -283,16 +297,13 @@ app.post('/api/game/:gameId/move', (req, res) => {
       }
       const defenderId = session.defender;
       const hand = session.hands[pid];
-      // найти карту в руке
       const idx = hand.findIndex(c => c.rank === card?.rank && c.suit === card?.suit);
       if (idx === -1) return res.status(400).json({ error: 'Card not in hand' });
 
-      // лимит по кол-ву пар — не больше карт у защитника
       if (session.table.length >= (session.hands[defenderId].length)) {
         return res.status(400).json({ error: 'Limit reached: defender has fewer cards' });
       }
 
-      // проверка по рангу: либо первая карта, либо подкидываем по рангам на столе
       if (session.table.length > 0) {
         const rset = ranksOnTable(session.table);
         if (!rset.has(hand[idx].rank)) {
@@ -326,7 +337,6 @@ app.post('/api/game/:gameId/move', (req, res) => {
 
       lastPair.defend = hand.splice(idx, 1)[0];
 
-      // если все пары закрыты — снова ход атакующего (он может подкинуть или сказать «бито»)
       const allDefended = session.table.every(p => p.defend);
       if (allDefended) {
         session.phase = 'attacking';
@@ -339,7 +349,6 @@ app.post('/api/game/:gameId/move', (req, res) => {
       if (session.currentPlayer !== pid || session.phase !== 'defending' || pid !== session.defender) {
         return res.status(400).json({ error: 'Only defender can take cards' });
       }
-      // защитник забирает всё со стола
       const defHand = session.hands[session.defender];
       for (const p of session.table) {
         defHand.push(p.attack);
@@ -348,7 +357,6 @@ app.post('/api/game/:gameId/move', (req, res) => {
       session.table = [];
       sortHand(defHand, session.trumpSuit);
 
-      // добор: сначала атакующий, потом защитник; атакующий НЕ меняется
       drawToSixFirstAttackerThenDefender(session, session.attacker, session.defender);
 
       session.phase = 'attacking';
@@ -367,19 +375,15 @@ app.post('/api/game/:gameId/move', (req, res) => {
       if (session.currentPlayer !== pid || session.phase !== 'attacking' || pid !== session.attacker) {
         return res.status(400).json({ error: 'Only attacker can pass (bito)' });
       }
-      // «Бито» возможно только если все пары закрыты
       if (!(session.table.length > 0 && session.table.every(p => p.defend))) {
         return res.status(400).json({ error: 'Cannot pass: not all pairs defended' });
       }
-      // очистка стола
       session.table = [];
 
-      // добор: сначала атакующий, потом защитник
       const oldAttacker = session.attacker;
       const oldDefender = session.defender;
       drawToSixFirstAttackerThenDefender(session, oldAttacker, oldDefender);
 
-      // смена ролей
       session.attacker = oldDefender;
       session.defender = oldAttacker;
       session.currentPlayer = session.attacker;
@@ -428,7 +432,10 @@ app.get('/set-webhook', async (_req, res) => {
 setInterval(() => {
   const now = Date.now();
   for (const [id, s] of gameSessions.entries()) {
-    if (now - (s.updated || s.created || now) > 30 * 60 * 1000) gameSessions.delete(id);
+    if (now - (s.updated || s.created || now) > 30 * 60 * 1000) {
+      console.log(`🧹 deleting stale game ${id}`);
+      gameSessions.delete(id);
+    }
   }
 }, 5 * 60 * 1000);
 
