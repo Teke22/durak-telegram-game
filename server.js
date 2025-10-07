@@ -10,6 +10,8 @@ const SUITS = ['♠', '♥', '♦', '♣'];
 const RANKS = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const RANK_VALUES = { '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, J: 11, Q: 12, K: 13, A: 14 };
 const HAND_LIMIT = 6;
+const MIN_PLAYERS = 2;
+const MAX_PLAYERS = 6;
 
 /* -------------------- Вспомогательные -------------------- */
 const getAppUrl = () => process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
@@ -39,7 +41,6 @@ async function setupWebhook() {
     console.error('❌ setWebHook failed:', err?.response?.body || err?.message || err);
   }
 }
-
 function initBot() {
   if (!token) {
     console.warn('⚠️  BOT_TOKEN not provided — bot disabled. Web UI will still work.');
@@ -53,9 +54,10 @@ function initBot() {
     const chatId = msg.chat.id;
     const keyboard = {
       inline_keyboard: [
-        [{ text: '🎮 Играть с ботом', web_app: { url: `${appUrl}?mode=bot` } }],
+        [{ text: '⚡ Быстрая игра с ботами', web_app: { url: `${appUrl}?mode=quickbots` } }],
         [{ text: '👥 Создать комнату', web_app: { url: `${appUrl}?mode=create` } }],
         [{ text: '🔗 Присоединиться по коду', web_app: { url: `${appUrl}?mode=join` } }],
+        [{ text: '🎮 Играть с одним ботом (классика)', web_app: { url: `${appUrl}?mode=bot` } }],
       ],
     };
     bot.sendMessage(chatId, '🎴 Добро пожаловать в "Подкидного дурака"!', { reply_markup: keyboard });
@@ -73,7 +75,6 @@ function initBot() {
   bot.on('error', (err) => console.error('🤖 Bot error:', err?.message || err));
   bot.on('polling_error', (err) => console.error('🤖 Polling error:', err?.message || err));
 }
-
 if (token) {
   app.post(`/bot${token}`, (req, res) => {
     try { bot.processUpdate(req.body); res.sendStatus(200); }
@@ -81,7 +82,7 @@ if (token) {
   });
 }
 
-/* -------------------- Игровая логика (сервер) -------------------- */
+/* -------------------- Утилиты игры -------------------- */
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -102,22 +103,6 @@ function sortHand(hand, trumpSuit) {
     return a.value - b.value;
   });
 }
-function drawToSixFirstAttackerThenDefender(session, attackerId, defenderId) {
-  const { deck, hands } = session;
-  const drawOne = (id) => { if (deck.length > 0) hands[id].push(deck.pop()); };
-  while (deck.length > 0 && (hands[attackerId].length < HAND_LIMIT || hands[defenderId].length < HAND_LIMIT)) {
-    if (hands[attackerId].length < HAND_LIMIT) drawOne(attackerId);
-    if (hands[defenderId].length < HAND_LIMIT) drawOne(defenderId);
-  }
-  sortHand(hands[attackerId], session.trumpSuit);
-  sortHand(hands[defenderId], session.trumpSuit);
-}
-function canDefend(session, defendCard, attackCard) {
-  if (!defendCard || !attackCard) return false;
-  if (defendCard.suit === attackCard.suit && defendCard.value > attackCard.value) return true;
-  if (defendCard.suit === session.trumpSuit && attackCard.suit !== session.trumpSuit) return true;
-  return false;
-}
 function ranksOnTable(table) {
   const s = new Set();
   for (const p of table) {
@@ -126,45 +111,282 @@ function ranksOnTable(table) {
   }
   return s;
 }
-function currentDefenderHandLen(session) {
-  return session.hands[session.defender].length;
+function canDefend(session, defendCard, attackCard) {
+  if (!defendCard || !attackCard) return false;
+  if (defendCard.suit === attackCard.suit && defendCard.value > attackCard.value) return true;
+  if (defendCard.suit === session.trumpSuit && attackCard.suit !== session.trumpSuit) return true;
+  return false;
 }
-function checkGameOver(session) {
-  const deckEmpty = session.deck.length === 0;
-  const aEmpty = session.hands[session.attacker].length === 0;
-  const dEmpty = session.hands[session.defender].length === 0;
-  if (!deckEmpty) return null;
-  if (aEmpty && dEmpty) return { winner: 'draw' };
-  if (aEmpty) return { winnerId: session.attacker };
-  if (dEmpty) return { winnerId: session.defender };
+function drawToSixFirstAttackerThenDefender(session) {
+  const { deck, hands, attacker, defender, trumpSuit } = session;
+  const drawOne = (id) => { if (deck.length > 0) hands[id].push(deck.pop()); };
+  while (deck.length > 0 && (hands[attacker].length < HAND_LIMIT || hands[defender].length < HAND_LIMIT)) {
+    if (hands[attacker].length < HAND_LIMIT) drawOne(attacker);
+    if (hands[defender].length < HAND_LIMIT) drawOne(defender);
+  }
+  sortHand(hands[attacker], trumpSuit);
+  sortHand(hands[defender], trumpSuit);
+}
+function nextIdx(session, idx) {
+  return (idx + 1) % session.seats.length;
+}
+function ensureActivePlayersHaveCards(session) {
+  // перекладываем роли, если у атакующего/защитника 0 карт
+  let safety = session.seats.length * 2;
+  while (safety-- > 0) {
+    const aLen = session.hands[session.attacker]?.length || 0;
+    const dLen = session.hands[session.defender]?.length || 0;
+    if (aLen === 0) {
+      const aIdx = session.seats.findIndex(s => s.id === session.attacker);
+      const na = session.seats[nextIdx(session, aIdx)].id;
+      session.attacker = na;
+      const nIdx = session.seats.findIndex(s => s.id === session.attacker);
+      session.defender = session.seats[nextIdx(session, nIdx)].id;
+      session.currentPlayer = session.attacker;
+      session.phase = 'attacking';
+      continue;
+    }
+    if (dLen === 0) {
+      const aIdx = session.seats.findIndex(s => s.id === session.attacker);
+      const nd = session.seats[nextIdx(session, aIdx)].id;
+      session.defender = nd;
+      if (session.currentPlayer === session.defender) {
+        session.currentPlayer = session.attacker;
+        session.phase = 'attacking';
+      }
+      continue;
+    }
+    break;
+  }
+}
+function checkGameOverMulti(session) {
+  const alive = session.seats.filter(s => (session.hands[s.id]?.length || 0) > 0);
+  if (session.deck.length === 0 && alive.length <= 1) {
+    const loserId = alive[0]?.id || null; // единственный с картами — «дурак»
+    const winners = session.seats.map(s => s.id).filter(id => id !== loserId);
+    return { loserId, winners };
+  }
   return null;
 }
+
+/* ----- выбор карт ботами ----- */
+function botChooseAttackCard(session, botId) {
+  const hand = session.hands[botId];
+  if (!hand || hand.length === 0) return -1;
+  if (session.table.length === 0) {
+    // минимальная по ценности
+    let best = -1, bestVal = Infinity;
+    for (let i = 0; i < hand.length; i++) {
+      const c = hand[i];
+      const val = c.suit === session.trumpSuit ? c.value + 100 : c.value;
+      if (val < bestVal) { bestVal = val; best = i; }
+    }
+    return best;
+  } else {
+    const rset = ranksOnTable(session.table);
+    for (let i = 0; i < hand.length; i++) if (rset.has(hand[i].rank)) return i;
+    return -1;
+  }
+}
+function botChooseDefendCard(session, botId, attackCard) {
+  const hand = session.hands[botId];
+  let best = -1, bestVal = Infinity;
+  for (let i = 0; i < hand.length; i++) {
+    const c = hand[i];
+    if (c.suit === attackCard.suit && c.value > attackCard.value) {
+      if (c.value < bestVal) { bestVal = c.value; best = i; }
+    } else if (c.suit === session.trumpSuit && attackCard.suit !== session.trumpSuit) {
+      const val = c.value + 100; if (val < bestVal) { bestVal = val; best = i; }
+    }
+  }
+  return best;
+}
+
+/* ----- обработка хода ботов + подкидывания ----- */
+function processBots(session) {
+  // крутим, пока можем делать детерминированные действия ботов
+  let guard = 100;
+  while (guard-- > 0 && session.status === 'playing') {
+    const current = session.currentPlayer;
+    const seatCurrent = session.seats.find(s => s.id === current);
+
+    // 1) если ход бота (атакует/защищается)
+    if (seatCurrent && seatCurrent.type === 'bot') {
+      if (session.phase === 'attacking') {
+        if (session.table.length === 0) {
+          const idx = botChooseAttackCard(session, current);
+          if (idx === -1) {
+            // нечем атаковать — бито
+            session.table = [];
+            const oldA = session.attacker, oldD = session.defender;
+            drawToSixFirstAttackerThenDefender(session);
+            session.attacker = oldD;
+            const aIdx = session.seats.findIndex(s => s.id === session.attacker);
+            session.defender = session.seats[nextIdx(session, aIdx)].id;
+            session.currentPlayer = session.attacker;
+            session.phase = 'attacking';
+            ensureActivePlayersHaveCards(session);
+          } else {
+            const card = session.hands[current].splice(idx, 1)[0];
+            session.table.push({ attack: card, defend: null });
+            session.phase = 'defending';
+            session.currentPlayer = session.defender;
+          }
+        } else {
+          const allDefended = session.table.every(p => p.defend);
+          const canAddMore = session.table.length < (session.hands[session.defender]?.length || 0);
+          if (allDefended && canAddMore) {
+            const idx = botChooseAttackCard(session, current);
+            if (idx !== -1) {
+              const card = session.hands[current].splice(idx, 1)[0];
+              session.table.push({ attack: card, defend: null });
+              session.phase = 'defending';
+              session.currentPlayer = session.defender;
+            } else {
+              session.table = [];
+              const oldA = session.attacker, oldD = session.defender;
+              drawToSixFirstAttackerThenDefender(session);
+              session.attacker = oldD;
+              const aIdx = session.seats.findIndex(s => s.id === session.attacker);
+              session.defender = session.seats[nextIdx(session, aIdx)].id;
+              session.currentPlayer = session.attacker;
+              session.phase = 'attacking';
+              ensureActivePlayersHaveCards(session);
+            }
+          } else {
+            // ждём защитника
+            break;
+          }
+        }
+      } else if (session.phase === 'defending') {
+        const lastPair = session.table[session.table.length - 1];
+        if (!lastPair || lastPair.defend) {
+          session.phase = 'attacking';
+          session.currentPlayer = session.attacker;
+          continue;
+        }
+        const idx = botChooseDefendCard(session, current, lastPair.attack);
+        if (idx === -1) {
+          const defHand = session.hands[current];
+          for (const p of session.table) {
+            defHand.push(p.attack);
+            if (p.defend) defHand.push(p.defend);
+          }
+          session.table = [];
+          sortHand(defHand, session.trumpSuit);
+          drawToSixFirstAttackerThenDefender(session);
+          session.currentPlayer = session.attacker; // атакующий сохраняется
+          session.phase = 'attacking';
+          ensureActivePlayersHaveCards(session);
+        } else {
+          const card = session.hands[current].splice(idx, 1)[0];
+          lastPair.defend = card;
+          const allDefended = session.table.every(p => p.defend);
+          if (allDefended) {
+            session.phase = 'attacking';
+            session.currentPlayer = session.attacker;
+          }
+        }
+      }
+      const overNow = checkGameOverMulti(session);
+      if (overNow) {
+        session.status = 'finished';
+        session.loserId = overNow.loserId || null;
+        session.winners = overNow.winners || [];
+        break;
+      }
+      session.updated = Date.now();
+      continue;
+    }
+
+    // 2) не ход бота, но идёт защита человека — позволим БОТАМ-помощникам «подкидывать»
+    if (session.phase === 'defending') {
+      const limit = (session.hands[session.defender]?.length || 0);
+      if (session.table.length >= limit) break; // уже максимум
+
+      const rset = ranksOnTable(session.table);
+      if (rset.size === 0) break;
+
+      let added = false;
+      // порядок: начиная с атакующего и далее по кругу, исключая защитника
+      let idx = session.seats.findIndex(s => s.id === session.attacker);
+      for (let step = 0; step < session.seats.length; step++) {
+        idx = (idx + (step === 0 ? 0 : 1)) % session.seats.length;
+        const seat = session.seats[idx];
+        if (seat.id === session.defender) continue;
+        if (seat.type !== 'bot') continue;
+
+        const hand = session.hands[seat.id];
+        let found = -1;
+        for (let i = 0; i < hand.length; i++) {
+          if (rset.has(hand[i].rank)) { found = i; break; }
+        }
+        if (found !== -1 && session.table.length < limit) {
+          const card = hand.splice(found, 1)[0];
+          session.table.push({ attack: card, defend: null });
+          added = true;
+          break;
+        }
+      }
+      if (!added) break; // никто не смог подкинуть
+      session.updated = Date.now();
+      continue; // попробуем подкинуть ещё, если возможно
+    }
+
+    // 3) иначе — стоп
+    break;
+  }
+}
+
+/* -------------------- Инициализация/старт игры -------------------- */
+function fillBots(session) {
+  const currentBots = session.seats.filter(s => s.type === 'bot').length;
+  const want = Math.max(0, Math.min(session.botCountWanted || 0, session.maxPlayers - session.seats.length + currentBots));
+  const toAdd = Math.min(want - currentBots, session.maxPlayers - session.seats.length);
+  for (let i = 0; i < toAdd; i++) {
+    const id = `bot_${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    session.seats.push({ id, type: 'bot' });
+  }
+}
 function startGame(session) {
-  console.log(`▶️  startGame for ${session.id}, players:`, session.players);
+  if (session.status === 'playing') return;
   session.deck = makeDeck();
   session.trumpCard = session.deck[session.deck.length - 1];
   session.trumpSuit = session.trumpCard.suit;
+  session.hands = {};
+  for (const seat of session.seats) session.hands[seat.id] = [];
+  // выдаём по 6 по кругу
+  for (let k = 0; k < HAND_LIMIT; k++) {
+    for (const seat of session.seats) {
+      if (session.deck.length > 0) session.hands[seat.id].push(session.deck.pop());
+    }
+  }
+  for (const seat of session.seats) sortHand(session.hands[seat.id], session.trumpSuit);
 
-  const [p1, p2] = session.players;
-  session.hands = { [p1]: [], [p2]: [] };
-  for (let i = 0; i < HAND_LIMIT; i++) session.hands[p1].push(session.deck.pop());
-  for (let i = 0; i < HAND_LIMIT; i++) session.hands[p2].push(session.deck.pop());
-  sortHand(session.hands[p1], session.trumpSuit);
-  sortHand(session.hands[p2], session.trumpSuit);
-
-  const attacker = Math.random() < 0.5 ? p1 : p2;
-  const defender = attacker === p1 ? p2 : p1;
-
-  session.attacker = attacker;
-  session.defender = defender;
-  session.currentPlayer = attacker;
+  const startIdx = Math.floor(Math.random() * session.seats.length);
+  session.attacker = session.seats[startIdx].id;
+  session.defender = session.seats[nextIdx(session, startIdx)].id;
+  session.currentPlayer = session.attacker;
   session.phase = 'attacking';
   session.table = [];
   session.status = 'playing';
   session.updated = Date.now();
-  session.winnerId = null;
-  session.winner = null;
-  console.log(`🎲 Game ${session.id} started. Trump: ${session.trumpSuit}. Attacker: ${attacker}`);
+  session.winners = [];
+  session.loserId = null;
+
+  ensureActivePlayersHaveCards(session);
+  processBots(session);
+}
+function maybeAutoStart(session) {
+  if (session.status === 'playing' || session.status === 'finished') return;
+  const seatsCount = session.seats.length;
+  const totalWithBots = seatsCount + Math.max(0, Math.min(session.botCountWanted || 0, session.maxPlayers - seatsCount));
+  const canStart = totalWithBots >= MIN_PLAYERS &&
+                   (!session.startWhenFull || totalWithBots === session.maxPlayers);
+  if (canStart) {
+    fillBots(session);
+    startGame(session);
+  }
 }
 
 /* -------------------- API -------------------- */
@@ -173,15 +395,29 @@ function startGame(session) {
 app.post('/api/create-game', (req, res) => {
   const gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
   const playerId = String(req.body.playerId || `player_${Date.now()}`);
-  console.log(`📦 create-game ${gameId} by ${playerId}`);
+  const maxPlayers = Math.max(MIN_PLAYERS, Math.min(MAX_PLAYERS, Number(req.body.maxPlayers) || 2));
+  let botCountWanted = Math.max(0, Math.min(Number(req.body.botCount) || 0, maxPlayers - 1));
+  const autostart = req.body.autostart !== false; // по умолчанию true
+  const startWhenFull = !!req.body.startWhenFull; // ждать, пока заполнится вся комната
+
+  console.log(`📦 create-game ${gameId} by ${playerId} | seats=${maxPlayers} bots=${botCountWanted} autostart=${autostart} full=${startWhenFull}`);
 
   gameSessions.set(gameId, {
     id: gameId,
-    players: [playerId],
-    status: 'waiting',
     created: Date.now(),
     updated: Date.now(),
 
+    // конфигурация
+    maxPlayers,
+    botCountWanted,
+    autostart,
+    startWhenFull,
+
+    // места
+    seats: [{ id: playerId, type: 'human' }],
+
+    // состояние
+    status: 'waiting',
     deck: [],
     trumpSuit: '',
     trumpCard: null,
@@ -191,11 +427,14 @@ app.post('/api/create-game', (req, res) => {
     defender: null,
     currentPlayer: null,
     phase: null,
-    winnerId: null,
-    winner: null,
+    winners: [],
+    loserId: null,
   });
 
-  res.json({ gameId, playerId, status: 'waiting' });
+  const session = gameSessions.get(gameId);
+  if (autostart) maybeAutoStart(session);
+
+  res.json({ gameId, playerId, status: session.status });
 });
 
 // Присоединиться
@@ -203,51 +442,43 @@ app.post('/api/join-game/:gameId', (req, res) => {
   const gameId = req.params.gameId;
   const rawId = String(req.body.playerId || `player_${Date.now()}`);
   const session = gameSessions.get(gameId);
-
   if (!session) return res.status(404).json({ error: 'Game not found' });
-  if (session.players.length >= 2) return res.status(400).json({ error: 'Game is full' });
+  if (session.status === 'finished') return res.status(400).json({ error: 'Game finished' });
 
-  // Если такой id уже есть — делаем уникальный суффикс
-  let effectiveId = rawId;
-  if (session.players.includes(rawId)) {
+  const existingIds = session.seats.map(s => s.id);
+  let playerId = rawId;
+  if (existingIds.includes(playerId)) {
     const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-    effectiveId = `${rawId}_${suffix}`;
-    console.log(`⚠️  join ${gameId}: duplicate id "${rawId}", using "${effectiveId}"`);
+    playerId = `${playerId}_${suffix}`;
+    console.log(`⚠️  join ${gameId}: duplicate id "${rawId}", using "${playerId}"`);
   }
+  if (session.seats.length >= session.maxPlayers) return res.status(400).json({ error: 'Game is full' });
 
-  session.players.push(effectiveId);
-  session.status = 'ready';
+  session.seats.push({ id: playerId, type: 'human' });
   session.updated = Date.now();
 
-  // как только двое — стартуем
-  if (session.players.length === 2) {
-    startGame(session);
-  }
+  if (session.autostart) maybeAutoStart(session);
 
-  console.log(`👥 join-game ${gameId}: players now ${session.players}`);
-  res.json({ gameId, playerId: effectiveId, status: 'joined' });
+  console.log(`👥 join ${gameId}: seats ${session.seats.map(s=>s.type[0]).join('')}/${session.maxPlayers} status=${session.status}`);
+  res.json({ gameId, playerId, status: 'joined' });
 });
 
-// Состояние игры (и автозапуск, если 2 игрока, а статус ещё не playing)
+// Состояние игры
 app.get('/api/game/:gameId', (req, res) => {
   const gameId = req.params.gameId;
   const playerId = String(req.query.playerId || '');
   const session = gameSessions.get(gameId);
   if (!session) return res.status(404).json({ error: 'Game not found' });
 
-  // Авто-старт на чтении, если нужно
-  if (session.players.length === 2 && session.status !== 'playing' && !session.winnerId && !session.winner) {
-    console.log(`⏩ auto-start on GET for ${gameId}`);
-    startGame(session);
-  }
+  if (session.autostart) maybeAutoStart(session);
 
-  const you = playerId && session.players.includes(playerId) ? playerId : null;
-  const opp = you ? session.players.find((p) => p !== you) : null;
+  const you = playerId && session.seats.find(s => s.id === playerId) ? playerId : null;
 
   const base = {
     id: session.id,
     status: session.status,
-    players: session.players,
+    seats: session.seats.map(s => ({ id: s.id, type: s.type, handCount: (session.hands[s.id]?.length || 0) })),
+    maxPlayers: session.maxPlayers,
     deckCount: session.deck.length,
     trumpSuit: session.trumpSuit,
     trumpCard: session.trumpCard,
@@ -257,76 +488,57 @@ app.get('/api/game/:gameId', (req, res) => {
     currentPlayer: session.currentPlayer,
     phase: session.phase,
     updated: session.updated,
-    winnerId: session.winnerId || null,
-    winner: session.winner || null,
+    winners: session.winners,
+    loserId: session.loserId,
+    config: { botCountWanted: session.botCountWanted, autostart: session.autostart, startWhenFull: session.startWhenFull },
   };
 
-  if (!you) {
-    return res.json({ ...base, note: 'anonymous viewer' });
-  }
+  if (!you) return res.json({ ...base, note: 'viewer' });
 
-  const yourHand = session.hands[you] || [];
-  const oppCount = opp ? (session.hands[opp]?.length || 0) : 0;
-
-  res.json({
-    ...base,
-    you,
-    opponentId: opp,
-    hand: yourHand,
-    opponentCount: oppCount,
-  });
+  const hand = session.hands[you] || [];
+  res.json({ ...base, you, hand });
 });
 
-// Ход
+// Сделать ход
 app.post('/api/game/:gameId/move', (req, res) => {
   const gameId = req.params.gameId;
   const { playerId, action, card } = req.body || {};
   const session = gameSessions.get(gameId);
   if (!session) return res.status(404).json({ error: 'Game not found' });
+  if (!playerId || !session.seats.find(s => s.id === String(playerId))) return res.status(403).json({ error: 'Not a participant' });
 
   if (session.status !== 'playing') return res.status(400).json({ error: 'Game is not playing' });
-  if (!session.players.includes(String(playerId))) return res.status(403).json({ error: 'Not a participant' });
-  if (session.winnerId || session.winner) return res.status(400).json({ error: 'Game finished' });
 
   try {
     const pid = String(playerId);
 
     if (action === 'attack') {
-      if (session.currentPlayer !== pid || session.phase !== 'attacking') {
-        return res.status(400).json({ error: 'Not your attacking turn' });
+      if (session.currentPlayer !== pid || session.phase !== 'attacking' || session.attacker !== pid) {
+        return res.status(400).json({ error: 'Not your attacking phase' });
       }
       const defenderId = session.defender;
       const hand = session.hands[pid];
       const idx = hand.findIndex(c => c.rank === card?.rank && c.suit === card?.suit);
       if (idx === -1) return res.status(400).json({ error: 'Card not in hand' });
-
-      if (session.table.length >= (session.hands[defenderId].length)) {
+      if (session.table.length >= (session.hands[defenderId]?.length || 0)) {
         return res.status(400).json({ error: 'Limit reached: defender has fewer cards' });
       }
-
       if (session.table.length > 0) {
         const rset = ranksOnTable(session.table);
-        if (!rset.has(hand[idx].rank)) {
-          return res.status(400).json({ error: 'Rank doesn\'t match cards on table' });
-        }
+        if (!rset.has(hand[idx].rank)) return res.status(400).json({ error: 'Rank doesn\'t match cards on table' });
       }
-
       const play = hand.splice(idx, 1)[0];
       session.table.push({ attack: play, defend: null });
-
       session.phase = 'defending';
       session.currentPlayer = session.defender;
-      session.updated = Date.now();
     }
 
     else if (action === 'defend') {
-      if (session.currentPlayer !== pid || session.phase !== 'defending') {
-        return res.status(400).json({ error: 'Not your defending turn' });
+      if (session.currentPlayer !== pid || session.phase !== 'defending' || session.defender !== pid) {
+        return res.status(400).json({ error: 'Not your defending phase' });
       }
       const lastPair = session.table[session.table.length - 1];
-      if (!lastPair || lastPair.defend) {
-        return res.status(400).json({ error: 'Nothing to defend' });
-      }
+      if (!lastPair || lastPair.defend) return res.status(400).json({ error: 'Nothing to defend' });
       const hand = session.hands[pid];
       const idx = hand.findIndex(c => c.rank === card?.rank && c.suit === card?.suit);
       if (idx === -1) return res.status(400).json({ error: 'Card not in hand' });
@@ -334,19 +546,35 @@ app.post('/api/game/:gameId/move', (req, res) => {
       if (!canDefend(session, chosen, lastPair.attack)) {
         return res.status(400).json({ error: 'Card cannot beat attack' });
       }
-
       lastPair.defend = hand.splice(idx, 1)[0];
-
       const allDefended = session.table.every(p => p.defend);
       if (allDefended) {
         session.phase = 'attacking';
         session.currentPlayer = session.attacker;
       }
-      session.updated = Date.now();
+    }
+
+    else if (action === 'add') {
+      // подкидывание от любого не-защитника во время защиты
+      if (session.phase !== 'defending') return res.status(400).json({ error: 'Cannot add now' });
+      if (pid === session.defender) return res.status(400).json({ error: 'Defender cannot add' });
+      const limit = (session.hands[session.defender]?.length || 0);
+      if (session.table.length >= limit) return res.status(400).json({ error: 'Limit reached' });
+
+      const hand = session.hands[pid];
+      const idx = hand.findIndex(c => c.rank === card?.rank && c.suit === card?.suit);
+      if (idx === -1) return res.status(400).json({ error: 'Card not in hand' });
+
+      const rset = ranksOnTable(session.table);
+      if (!rset.has(hand[idx].rank)) return res.status(400).json({ error: 'Rank doesn\'t match cards on table' });
+
+      const play = hand.splice(idx, 1)[0];
+      session.table.push({ attack: play, defend: null });
+      // currentPlayer остаётся защитником
     }
 
     else if (action === 'take') {
-      if (session.currentPlayer !== pid || session.phase !== 'defending' || pid !== session.defender) {
+      if (session.currentPlayer !== pid || session.phase !== 'defending' || session.defender !== pid) {
         return res.status(400).json({ error: 'Only defender can take cards' });
       }
       const defHand = session.hands[session.defender];
@@ -356,52 +584,43 @@ app.post('/api/game/:gameId/move', (req, res) => {
       }
       session.table = [];
       sortHand(defHand, session.trumpSuit);
-
-      drawToSixFirstAttackerThenDefender(session, session.attacker, session.defender);
-
+      drawToSixFirstAttackerThenDefender(session);
+      session.currentPlayer = session.attacker; // атакующий сохраняется
       session.phase = 'attacking';
-      session.currentPlayer = session.attacker;
-      session.updated = Date.now();
-
-      const over = checkGameOver(session);
-      if (over) {
-        session.status = 'finished';
-        session.winnerId = over.winnerId || null;
-        session.winner = over.winner || null;
-      }
+      ensureActivePlayersHaveCards(session);
     }
 
-    else if (action === 'pass') {
-      if (session.currentPlayer !== pid || session.phase !== 'attacking' || pid !== session.attacker) {
+    else if (action === 'pass') { // Бито — только атакующий
+      if (session.currentPlayer !== pid || session.phase !== 'attacking' || session.attacker !== pid) {
         return res.status(400).json({ error: 'Only attacker can pass (bito)' });
       }
       if (!(session.table.length > 0 && session.table.every(p => p.defend))) {
         return res.status(400).json({ error: 'Cannot pass: not all pairs defended' });
       }
       session.table = [];
-
-      const oldAttacker = session.attacker;
-      const oldDefender = session.defender;
-      drawToSixFirstAttackerThenDefender(session, oldAttacker, oldDefender);
-
-      session.attacker = oldDefender;
-      session.defender = oldAttacker;
+      const oldA = session.attacker, oldD = session.defender;
+      drawToSixFirstAttackerThenDefender(session);
+      session.attacker = oldD;
+      const aIdx = session.seats.findIndex(s => s.id === session.attacker);
+      session.defender = session.seats[nextIdx(session, aIdx)].id;
       session.currentPlayer = session.attacker;
       session.phase = 'attacking';
-      session.updated = Date.now();
-
-      const over = checkGameOver(session);
-      if (over) {
-        session.status = 'finished';
-        session.winnerId = over.winnerId || null;
-        session.winner = over.winner || null;
-      }
+      ensureActivePlayersHaveCards(session);
     }
 
     else {
       return res.status(400).json({ error: 'Unknown action' });
     }
 
+    const over = checkGameOverMulti(session);
+    if (over) {
+      session.status = 'finished';
+      session.loserId = over.loserId || null;
+      session.winners = over.winners || [];
+    } else {
+      processBots(session);
+    }
+    session.updated = Date.now();
     return res.json({ ok: true, updated: session.updated });
   } catch (e) {
     console.error('move error:', e);

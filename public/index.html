@@ -8,19 +8,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Подкидной дурак | Мини-приложение</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <div id="app">
     <h1>🎴 Подкидной дурак</h1>
+
+    <!-- Список игроков -->
+    <div id="seats"></div>
+
     <div id="game-board">
       <p>Нажмите "Начать игру" чтобы сыграть против бота!</p>
     </div>
     <button id="start-game">Начать игру</button>
+
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
   </div>
 
-  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
-
-  <script src="script.js?v=8"></script>
+  <script src="script.js?v=10"></script>
 </body>
 </html>
